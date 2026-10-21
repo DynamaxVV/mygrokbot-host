@@ -1,0 +1,20 @@
+{
+  "name": "mygrokbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A personal, self-hosted Grok Bot lookalike: multi-bot roster, gateway RPC, transcript store, routines, skills, provider routing.",
+  "engines": {
+    "node": ">=22.5"
+  },
+  "bin": {
+    "mgb": "./bin/mgb.mjs"
+  },
+  "scripts": {
+    "start": "node bin/mgb.mjs serve",
+    "cli": "node bin/mgb.mjs",
+    "test": "node --test 'test/**/*.test.mjs'",
+    "doctor": "node bin/mgb.mjs doctor"
+  },
+  "license": "GPL-3.0"
+}

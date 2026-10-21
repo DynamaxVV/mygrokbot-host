@@ -1,0 +1,10 @@
+GNU GENERAL PUBLIC LICENSE
+Version 3, 29 June 2007
+
+This project is licensed under the GNU General Public License, version 3.
+
+It incorporates design rules, layout constants, and behavioural specifications
+derived from Telegram Web K (https://github.com/morethanwords/tweb), which is
+itself licensed under GPL-3.0. Those derivations are documented in docs/UI.md.
+
+See https://www.gnu.org/licenses/gpl-3.0.txt for the full license text.

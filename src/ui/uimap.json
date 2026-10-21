@@ -1,0 +1,2049 @@
+{
+  "version": 1,
+  "settings": {
+    "openers": [
+      "Settings in the Account menu (the account name at the bottom of the sidebar)",
+      "Open settings: ⌘, on macOS, Ctrl+, elsewhere",
+      "a grokbot://app/v1/settings?id=<anchor> link in chat"
+    ],
+    "dialog": "Grok Bot settings",
+    "sections": [
+      {
+        "id": "general",
+        "label": "General",
+        "entrypoint": "overlay:settings/general",
+        "visibility": {},
+        "headings": [
+          "General",
+          "Account",
+          "Appearance",
+          "System",
+          "Bot",
+          "Custom Rules",
+          "Security Key"
+        ],
+        "rows": [
+          {
+            "anchor": "account",
+            "label": "Account",
+            "description": "Manage your sign-in, team, and saved accounts",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Change profile photo"
+              },
+              {
+                "role": "button",
+                "name": "Sign Out",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Sign out?",
+                      "actions": [
+                        "Cancel",
+                        "Sign out"
+                      ]
+                    },
+                    "visibility": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "theme",
+            "label": "Theme",
+            "description": "Pick the light or dark look for Grok Bot",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "combobox",
+                "name": "Theme",
+                "options": [
+                  "Follow System",
+                  "Light",
+                  "Dark"
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "accent",
+            "label": "Accent",
+            "description": "Color 1:1 Bot messages and cards with the Bot's color, or keep them black",
+            "visibility": {
+              "gates": [
+                "sand_enable_accent_theming",
+                "grok_bot_all_bots_color_theming"
+              ]
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "combobox",
+                "name": "Accent",
+                "options": [
+                  "Black",
+                  "Bot color"
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "language",
+            "label": "Language",
+            "description": "Choose the language Grok Bot uses for menus and messages",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Language, Follow System"
+              }
+            ]
+          },
+          {
+            "anchor": "spell-check",
+            "label": "Check Spelling While Typing",
+            "description": "Underline misspelled words as you type",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Check Spelling While Typing"
+              }
+            ]
+          },
+          {
+            "anchor": "hardware-acceleration",
+            "label": "Use hardware acceleration",
+            "description": "Let your graphics card draw the app, or turn it off if the window flickers or stays blank",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Use hardware acceleration"
+              }
+            ]
+          },
+          {
+            "anchor": "network-debugger",
+            "label": "Network Debugger",
+            "description": "Check Grok Bot's connection",
+            "visibility": {
+              "gates": [
+                "grok_bot_network_debugger"
+              ]
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Network Debugger",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Network Debugger",
+                      "actions": [
+                        "Close dialog",
+                        "Copy Domains",
+                        "Download Logs",
+                        "Check Access"
+                      ]
+                    },
+                    "visibility": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "timezone",
+            "label": "Timezone",
+            "description": "Set the time zone Grok Bot uses for schedules and reminders",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Timezone, Auto-detect"
+              }
+            ]
+          },
+          {
+            "anchor": "auto-review",
+            "label": "Auto-review",
+            "description": "Choose how closely Grok Bot checks its own risky actions before it runs them",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Auto-review"
+              }
+            ]
+          },
+          {
+            "anchor": "auto-review-rules",
+            "label": "Custom Rules",
+            "description": "Set rules for which actions Grok Bot can take automatically",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Auto-review"
+              },
+              {
+                "role": "textbox",
+                "name": "Custom Rule draft"
+              },
+              {
+                "role": "combobox",
+                "name": "Rule behavior",
+                "options": [
+                  "Allow automatically",
+                  "Ask first"
+                ]
+              },
+              {
+                "role": "button",
+                "name": "Add rule"
+              }
+            ]
+          },
+          {
+            "anchor": "security-keys",
+            "label": "Use hardware security keys",
+            "description": "Require a hardware security key, like a YubiKey, for sensitive actions",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Use hardware security keys"
+              }
+            ]
+          },
+          {
+            "anchor": "team-bot-connector-preferences",
+            "label": "Clear connector preferences",
+            "description": "Remove any preferences you have set with Team Bots which give them access to your personal connectors",
+            "visibility": {
+              "gates": [
+                "grok_bot_multiplayer"
+              ],
+              "fact": "team"
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Clear",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Clear connector preferences?",
+                      "actions": [
+                        "Cancel",
+                        "Clear"
+                      ]
+                    },
+                    "visibility": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "team-bot-slack-link",
+            "label": "Slack account",
+            "description": "Link your Slack account to Cursor so Team Bots and Cloud Agents know who you are in Slack",
+            "visibility": {
+              "gates": [
+                "grok_bot_multiplayer"
+              ],
+              "fact": "team"
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Link"
+              }
+            ]
+          },
+          {
+            "anchor": "team-bot-microsoft-teams-link",
+            "label": "Microsoft Teams account",
+            "description": "Link your Microsoft Teams account to Cursor so Team Bots and Cloud Agents know who you are in Microsoft Teams",
+            "visibility": {
+              "gates": [
+                "grok_bot_team_integration_enabled"
+              ],
+              "fact": "team"
+            },
+            "linkable": false,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Link"
+              },
+              {
+                "role": "button",
+                "name": "Guest organization"
+              }
+            ]
+          },
+          {
+            "anchor": "passkeys",
+            "label": "Passkeys",
+            "description": "Save a passkey so Grok Bot can confirm it's you before it approves a purchase",
+            "visibility": {
+              "gates": [
+                "grok_bot_spend_approval_passkey"
+              ]
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Add passkey",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Confirm it's you",
+                      "actions": [
+                        "Cancel",
+                        "Send code"
+                      ]
+                    },
+                    "visibility": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "import-memory",
+            "label": "Import Memory to Grok Bot",
+            "description": "Transfer your preferences and context from another AI assistant",
+            "visibility": {
+              "gates": [
+                "grok_bot_memory_import"
+              ]
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Start Import"
+              }
+            ]
+          },
+          {
+            "anchor": "microphone",
+            "label": "Microphone",
+            "description": "Choose which microphone Grok Bot listens to when you talk to it",
+            "visibility": {
+              "note": "shown when the system exposes audio input devices"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "hardware-acceleration-restart",
+            "label": "Restart to Apply",
+            "description": "Restart Grok Bot so the graphics change takes effect",
+            "visibility": {
+              "note": "shown after the hardware acceleration toggle changes, until the app restarts"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "notification-sound-enabled",
+            "label": "Play Sound for Notifications",
+            "description": "Turn the sound that plays when Grok Bot sends you a message on or off",
+            "visibility": {
+              "gates": [
+                "sand_notification_sounds"
+              ],
+              "note": "internal builds only"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "notification-sound",
+            "label": "Notification Sound",
+            "description": "Pick the sound that plays when Grok Bot sends you a message",
+            "visibility": {
+              "gates": [
+                "sand_notification_sounds"
+              ],
+              "note": "internal builds only"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "model",
+            "label": "Model",
+            "description": "Choose which AI model Grok Bot thinks with",
+            "visibility": {
+              "note": "reserved; no row renders it yet"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "team-bot-link-previews",
+            "label": "Link previews",
+            "description": "Show each Team Bot's name, description, color and shape wherever its link is posted",
+            "visibility": {
+              "gates": [
+                "grok_bot_multiplayer"
+              ],
+              "fact": "team",
+              "note": "shown to admins of the selected team"
+            },
+            "linkable": true,
+            "controls": []
+          }
+        ],
+        "controls": []
+      },
+      {
+        "id": "computer",
+        "label": "Computer",
+        "entrypoint": "overlay:settings/computer",
+        "visibility": {},
+        "headings": [
+          "Computer",
+          "Your computer",
+          "Bot's computer"
+        ],
+        "rows": [
+          {
+            "anchor": "local-execution",
+            "label": "Execution on Local Computer",
+            "description": "Allow Grok Bot to run tasks on this computer, not only on its own computer",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "combobox",
+                "name": "Execution on this computer",
+                "options": [
+                  "Always allow",
+                  "Ask every time",
+                  "Never allow"
+                ]
+              }
+            ],
+            "adminLock": {
+              "policy": "localToolPermissionCeiling",
+              "copy": "Your team's admin allows at most \"<limit>\"",
+              "disablesControls": false
+            }
+          },
+          {
+            "anchor": "computers",
+            "label": "Your computer",
+            "description": "See and manage the computers Grok Bot can work on",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Rename this computer, This computer"
+              }
+            ]
+          },
+          {
+            "anchor": "messages",
+            "label": "Use Messages",
+            "description": "Lets Grok Bot read and send texts on this Mac",
+            "visibility": {
+              "gates": [
+                "sand_messages_tools"
+              ],
+              "note": "macOS only"
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Use Messages"
+              }
+            ]
+          },
+          {
+            "anchor": "egress",
+            "label": "Route traffic through this computer",
+            "description": "Send Grok Bot's internet traffic through this desktop instead of its own computer",
+            "visibility": {
+              "gates": [
+                "sand_box_egress_tunnel"
+              ]
+            },
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Route traffic through this computer"
+              }
+            ],
+            "adminLock": {
+              "policy": "localEgressLocked",
+              "copy": "Your team admin has turned off local traffic routing. Grok Bot's computer routes traffic through the cloud.",
+              "disablesControls": false
+            }
+          },
+          {
+            "anchor": "update-computer",
+            "label": "Update Bot's Computer",
+            "description": "Install the latest software on Grok Bot's computer and keep your files in place",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Update Bot's Computer",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "arm",
+                      "label": "Click Again to Confirm"
+                    },
+                    "visibility": {
+                      "unlessGates": [
+                        "sand_scheduled_computer_updates"
+                      ]
+                    }
+                  },
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Update computer",
+                      "actions": [
+                        "Schedule update",
+                        "Update now"
+                      ]
+                    },
+                    "visibility": {
+                      "gates": [
+                        "sand_scheduled_computer_updates"
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "reset-computer",
+            "label": "Reset Bot's Computer",
+            "description": "Restart Grok Bot's computer from your last saved snapshot if it gets stuck",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Reset Bot's Computer",
+                "confirm": [
+                  {
+                    "flow": {
+                      "kind": "dialog",
+                      "title": "Reset Grok Bot's Computer?",
+                      "actions": [
+                        "Cancel",
+                        "Reset Grok Bot's Computer"
+                      ]
+                    },
+                    "visibility": {}
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "anchor": "chrome-cookie-import",
+            "label": "Import cookies from Chrome",
+            "description": "Copy your Chrome logins to Grok Bot's computer so it can use the sites you are signed in to",
+            "visibility": {
+              "gates": [
+                "sand_import_chrome_cookies"
+              ],
+              "note": "macOS and Windows, once the browser can take cookies"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "messages-send-without-asking",
+            "label": "Send Without Asking",
+            "description": "Choose whether Grok Bot asks before it sends a text",
+            "visibility": {
+              "gates": [
+                "sand_messages_tools"
+              ],
+              "note": "macOS only, once Messages is on"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "messages-allowed-recipients",
+            "label": "Allowed recipients",
+            "description": "Manage who Grok Bot can text without asking first",
+            "visibility": {
+              "gates": [
+                "sand_messages_tools"
+              ],
+              "note": "macOS only, once Messages is on"
+            },
+            "linkable": true,
+            "controls": []
+          }
+        ],
+        "controls": [],
+        "repeated": [
+          {
+            "label": "Other computers",
+            "item": "<other computer> (a phone lists here too)",
+            "visibility": {
+              "unlessGates": [
+                "sand_mobile_local_tools"
+              ],
+              "note": "shown once the account has signed in on another computer or phone"
+            },
+            "controls": [
+              {
+                "role": "button",
+                "name": "Other computers"
+              },
+              {
+                "role": "combobox",
+                "name": "Execution on this computer, <phone>",
+                "options": [
+                  "Always allow",
+                  "Ask every time",
+                  "Never allow"
+                ]
+              },
+              {
+                "role": "combobox",
+                "name": "Execution on this computer, <other computer>",
+                "options": [
+                  "Always allow",
+                  "Ask every time",
+                  "Never allow"
+                ]
+              },
+              {
+                "role": "button",
+                "name": "Remove <other computer>"
+              }
+            ]
+          },
+          {
+            "label": "Manage devices",
+            "item": "<other computer> or <phone>, with this computer listed first",
+            "visibility": {
+              "gates": [
+                "sand_mobile_local_tools"
+              ]
+            },
+            "controls": [
+              {
+                "role": "button",
+                "name": "Rename <phone>, iOS"
+              },
+              {
+                "role": "button",
+                "name": "Rename <other computer>, Computer"
+              },
+              {
+                "role": "combobox",
+                "name": "Execution on this computer, <other computer>",
+                "options": [
+                  "Always allow",
+                  "Ask every time",
+                  "Never allow"
+                ]
+              },
+              {
+                "role": "button",
+                "name": "More actions for <other computer>, Computer"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "vault",
+        "label": "Vault",
+        "entrypoint": "overlay:settings/vault",
+        "visibility": {
+          "gates": [
+            "grok_bot_vault"
+          ]
+        },
+        "headings": [
+          "Vault"
+        ],
+        "rows": [],
+        "controls": [
+          {
+            "role": "button",
+            "name": "New item"
+          }
+        ]
+      },
+      {
+        "id": "usage",
+        "label": "Usage & Billing",
+        "entrypoint": "overlay:settings/usage",
+        "visibility": {
+          "note": "shown once the account's usage summary loads"
+        },
+        "headings": [
+          "Usage & Billing"
+        ],
+        "rows": [
+          {
+            "anchor": "usage",
+            "label": "Usage",
+            "description": "See your included usage and when it resets",
+            "visibility": {
+              "note": "shown once the account's usage summary loads"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "plan",
+            "label": "Manage Plan",
+            "description": "See your plan, change it, or update billing",
+            "visibility": {
+              "note": "shown when the plan offers an upgrade"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "cancel-trial",
+            "label": "Cancel Trial",
+            "description": "End your free trial early",
+            "visibility": {
+              "note": "shown during a Grok Bot trial"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "on-demand",
+            "label": "On-Demand",
+            "description": "Allow extra usage beyond your plan, billed as you go",
+            "visibility": {
+              "note": "shown when the plan meters on-demand usage"
+            },
+            "linkable": true,
+            "controls": []
+          },
+          {
+            "anchor": "billing",
+            "label": "Manage Billing",
+            "description": "Manage your billing on Cursor",
+            "visibility": {
+              "note": "shown when the account has a billing portal"
+            },
+            "linkable": true,
+            "controls": []
+          }
+        ],
+        "controls": []
+      },
+      {
+        "id": "updates",
+        "label": "Updates",
+        "entrypoint": "overlay:settings/updates",
+        "visibility": {},
+        "headings": [
+          "Updates",
+          "Grok Bot Updates"
+        ],
+        "rows": [
+          {
+            "anchor": "update-status",
+            "label": "Grok Bot Updates",
+            "description": "See which version of Grok Bot you have and whether an update is ready",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "button",
+                "name": "Check for Updates"
+              }
+            ]
+          },
+          {
+            "anchor": "automatic-updates",
+            "label": "Automatic Updates",
+            "description": "Let Grok Bot install updates on its own",
+            "visibility": {},
+            "linkable": true,
+            "controls": [
+              {
+                "role": "switch",
+                "name": "Automatic Updates"
+              }
+            ]
+          },
+          {
+            "anchor": "update-channel",
+            "label": "Update Track",
+            "description": "Choose whether Grok Bot installs stable releases only or tries beta builds early",
+            "visibility": {
+              "note": "shown when the account can pick a track other than Stable"
+            },
+            "linkable": true,
+            "controls": []
+          }
+        ],
+        "controls": [
+          {
+            "role": "button",
+            "name": "Copy version"
+          }
+        ]
+      }
+    ]
+  },
+  "sidebar": {
+    "accountMenu": {
+      "name": "Account menu",
+      "opener": "the account name at the bottom of the sidebar",
+      "items": [
+        {
+          "label": "Get Grok Bot for mobile"
+        },
+        {
+          "label": "Support"
+        },
+        {
+          "label": "Settings"
+        },
+        {
+          "label": "Add account"
+        },
+        {
+          "label": "Log out"
+        }
+      ]
+    },
+    "botActions": {
+      "name": "Bot actions",
+      "opener": "right-click a Bot in the sidebar",
+      "items": [
+        {
+          "label": "Pin"
+        },
+        {
+          "label": "Move to new section"
+        },
+        {
+          "label": "Mark as Unread"
+        },
+        {
+          "label": "Copy conversation ID"
+        },
+        {
+          "label": "Hide from sidebar"
+        },
+        {
+          "label": "Delete",
+          "confirm": {
+            "title": "Delete “<Bot name>”",
+            "action": "Delete"
+          }
+        }
+      ]
+    },
+    "hiddenSection": {
+      "label": "Hidden Bots",
+      "visibility": {
+        "note": "shown once at least one Bot is hidden"
+      }
+    },
+    "targets": [
+      {
+        "id": "webhook-url",
+        "label": "Webhook URL",
+        "trigger": "webhook",
+        "location": "the Task's detail panel, opened from the Task in the Tasks list of the Details pane",
+        "control": {
+          "role": "textbox",
+          "name": "Webhook URL"
+        }
+      },
+      {
+        "id": "webhook-key",
+        "label": "Webhook key",
+        "trigger": "webhook",
+        "location": "the Task's detail panel, opened from the Task in the Tasks list of the Details pane",
+        "control": {
+          "role": "textbox",
+          "name": "Webhook key"
+        }
+      },
+      {
+        "id": "webhook-header",
+        "label": "Authorization header",
+        "trigger": "webhook",
+        "location": "the Task's detail panel, opened from the Task in the Tasks list of the Details pane",
+        "control": {
+          "role": "textbox",
+          "name": "Authorization header"
+        }
+      }
+    ]
+  },
+  "infoPane": {
+    "openers": [
+      "the Bot's name at the top of the chat",
+      "the Details command (toggle the Bot details pane)"
+    ],
+    "layoutGate": "sand_simplified_right_pane",
+    "tabIds": [
+      "overview",
+      "routines",
+      "media",
+      "computer",
+      "meetings",
+      "members"
+    ],
+    "tabLabels": {
+      "overview": "Details",
+      "routines": "Tasks",
+      "media": "Library",
+      "computer": "Computer",
+      "meetings": "Meetings",
+      "members": "Members"
+    },
+    "layouts": [
+      {
+        "layout": "simplified",
+        "agentKind": "bot",
+        "tabs": [
+          {
+            "id": "overview",
+            "label": "Details"
+          },
+          {
+            "id": "media",
+            "label": "Library"
+          },
+          {
+            "id": "computer",
+            "label": "Computer"
+          }
+        ],
+        "regions": [],
+        "headerControls": [
+          {
+            "role": "button",
+            "name": "Close"
+          }
+        ],
+        "identityControls": [
+          {
+            "role": "button",
+            "name": "Edit Bot avatar"
+          },
+          {
+            "role": "textbox",
+            "name": "Bot name"
+          }
+        ],
+        "settingsSubpage": null,
+        "notifications": null
+      },
+      {
+        "layout": "simplified",
+        "agentKind": "group",
+        "tabs": [
+          {
+            "id": "overview",
+            "label": "Details"
+          },
+          {
+            "id": "media",
+            "label": "Library"
+          },
+          {
+            "id": "members",
+            "label": "Members"
+          }
+        ],
+        "regions": [],
+        "headerControls": [
+          {
+            "role": "button",
+            "name": "Close"
+          }
+        ],
+        "identityControls": [
+          {
+            "role": "button",
+            "name": "Edit group avatar"
+          },
+          {
+            "role": "textbox",
+            "name": "Group name"
+          }
+        ],
+        "settingsSubpage": null,
+        "notifications": {
+          "location": "the Members tab",
+          "label": "Notifications",
+          "description": null
+        }
+      },
+      {
+        "layout": "classic",
+        "agentKind": "bot",
+        "tabs": null,
+        "regions": [],
+        "headerControls": [
+          {
+            "role": "button",
+            "name": "Bot settings"
+          },
+          {
+            "role": "button",
+            "name": "Close"
+          }
+        ],
+        "identityControls": [],
+        "settingsSubpage": {
+          "fields": [
+            {
+              "role": "button",
+              "name": "Edit Bot avatar"
+            },
+            {
+              "role": "textbox",
+              "name": "Bot name"
+            }
+          ]
+        },
+        "notifications": {
+          "location": "the Settings subpage behind the header \"Bot settings\" control",
+          "label": "Notifications",
+          "description": "Get notified when this Bot finishes or is waiting for you"
+        }
+      },
+      {
+        "layout": "classic",
+        "agentKind": "group",
+        "tabs": null,
+        "regions": [],
+        "headerControls": [
+          {
+            "role": "button",
+            "name": "Bot settings"
+          },
+          {
+            "role": "button",
+            "name": "Close"
+          }
+        ],
+        "identityControls": [],
+        "settingsSubpage": {
+          "fields": [
+            {
+              "role": "button",
+              "name": "Edit group avatar"
+            },
+            {
+              "role": "textbox",
+              "name": "Group name"
+            }
+          ]
+        },
+        "notifications": {
+          "location": "the pane",
+          "label": "Notifications",
+          "description": null
+        }
+      }
+    ]
+  },
+  "plugins": {
+    "entry": {
+      "location": "the button at the bottom of the sidebar",
+      "label": "Marketplace",
+      "gatedLabel": {
+        "gate": "sand_new_connect_button",
+        "label": "Connect apps"
+      },
+      "commandId": "sand.openTools"
+    },
+    "native": [
+      {
+        "id": "onepassword",
+        "label": "1Password",
+        "visibility": {},
+        "controls": [
+          {
+            "role": "button",
+            "name": "Connect 1Password"
+          },
+          {
+            "role": "button",
+            "name": "Use a service account token instead"
+          }
+        ]
+      },
+      {
+        "id": "email",
+        "label": "Email",
+        "visibility": {
+          "gates": [
+            "grok_bot_agent_mail"
+          ]
+        },
+        "controls": [
+          {
+            "role": "textbox",
+            "name": "Email address name"
+          },
+          {
+            "role": "button",
+            "name": "Create address"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    {
+      "id": "sand.keyboardShortcuts",
+      "label": "Keyboard shortcuts",
+      "hotkey": {
+        "mac": "⌘/ or ⌘⇧/",
+        "other": "Ctrl+/ or Ctrl+Shift+/"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.send",
+      "label": "Send message",
+      "hotkey": {
+        "mac": "⌘Enter",
+        "other": "Ctrl+Enter"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.newAgent",
+      "label": "New Bot",
+      "hotkey": {
+        "mac": "⌘N",
+        "other": "Ctrl+N"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.newGroupChat",
+      "label": "New group chat",
+      "hotkey": {
+        "mac": "⌘⇧N",
+        "other": "Ctrl+Shift+N"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.commandPalette",
+      "label": "Jump to",
+      "hotkey": {
+        "mac": "⌘K",
+        "other": "Ctrl+K"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.openSettings",
+      "label": "Open settings",
+      "hotkey": {
+        "mac": "⌘,",
+        "other": "Ctrl+,"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.toggleAgentSettings",
+      "label": "Toggle Bot settings",
+      "hotkey": {
+        "mac": "⌘⇧,",
+        "other": "Ctrl+Shift+,"
+      },
+      "visibility": {
+        "note": "only with the stacked details pane"
+      }
+    },
+    {
+      "id": "sand.openTools",
+      "label": "Customize",
+      "hotkey": {
+        "mac": "⌘⇧M",
+        "other": "Ctrl+Shift+M"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusInput",
+      "label": "Focus prompt",
+      "hotkey": {
+        "mac": "⌘I",
+        "other": "Ctrl+I"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.addSelectionToPrompt",
+      "label": "Add selection to prompt",
+      "hotkey": {
+        "mac": "⌘L",
+        "other": "Ctrl+L"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.findInChat",
+      "label": "Find in chat",
+      "hotkey": {
+        "mac": "⌘F",
+        "other": "Ctrl+F"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusSearch",
+      "label": "Search Bots",
+      "hotkey": {
+        "mac": "⌘⇧F",
+        "other": "Ctrl+Shift+F"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.previousAgent",
+      "label": "Previous Bot",
+      "hotkey": {
+        "mac": "⌥Up",
+        "other": "Alt+Up"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.nextAgent",
+      "label": "Next Bot",
+      "hotkey": {
+        "mac": "⌥Down",
+        "other": "Alt+Down"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.navigateBack",
+      "label": "Back",
+      "hotkey": {
+        "mac": "⌘[",
+        "other": "Ctrl+["
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.navigateForward",
+      "label": "Forward",
+      "hotkey": {
+        "mac": "⌘]",
+        "other": "Ctrl+]"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent1",
+      "label": "Focus sidebar Bot 1",
+      "hotkey": {
+        "mac": "⌘1",
+        "other": "Ctrl+1"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent2",
+      "label": "Focus sidebar Bot 2",
+      "hotkey": {
+        "mac": "⌘2",
+        "other": "Ctrl+2"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent3",
+      "label": "Focus sidebar Bot 3",
+      "hotkey": {
+        "mac": "⌘3",
+        "other": "Ctrl+3"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent4",
+      "label": "Focus sidebar Bot 4",
+      "hotkey": {
+        "mac": "⌘4",
+        "other": "Ctrl+4"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent5",
+      "label": "Focus sidebar Bot 5",
+      "hotkey": {
+        "mac": "⌘5",
+        "other": "Ctrl+5"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent6",
+      "label": "Focus sidebar Bot 6",
+      "hotkey": {
+        "mac": "⌘6",
+        "other": "Ctrl+6"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent7",
+      "label": "Focus sidebar Bot 7",
+      "hotkey": {
+        "mac": "⌘7",
+        "other": "Ctrl+7"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent8",
+      "label": "Focus sidebar Bot 8",
+      "hotkey": {
+        "mac": "⌘8",
+        "other": "Ctrl+8"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.focusAgent9",
+      "label": "Focus sidebar Bot 9",
+      "hotkey": {
+        "mac": "⌘9",
+        "other": "Ctrl+9"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.openSkills",
+      "label": "Skills",
+      "hotkey": {
+        "mac": "⌘⇧W",
+        "other": "Ctrl+Shift+W"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.toggleSidebar",
+      "label": "Toggle compact sidebar",
+      "hotkey": {
+        "mac": "⌘B",
+        "other": "Ctrl+B"
+      },
+      "visibility": {}
+    },
+    {
+      "id": "sand.toggleInfo",
+      "label": "Toggle details",
+      "hotkey": {
+        "mac": "⌘⇧I or ⌘⌥B",
+        "other": "Ctrl+Alt+B"
+      },
+      "visibility": {}
+    }
+  ],
+  "deepLinks": {
+    "scheme": "grokbot",
+    "authority": "app",
+    "routes": {
+      "agent": {
+        "path": "/v1/agent",
+        "params": [
+          "id"
+        ]
+      },
+      "bot-template": {
+        "path": "/v1/bot-template",
+        "params": [
+          "id",
+          "open?"
+        ]
+      },
+      "marketplace": {
+        "path": "/v1/marketplace",
+        "params": [
+          "tab?",
+          "id?"
+        ]
+      },
+      "plugin-add": {
+        "path": "/v1/plugin/add",
+        "params": [
+          "id",
+          "team?",
+          "channel?",
+          "threadTs?"
+        ]
+      },
+      "plugin-native": {
+        "path": "/v1/plugin/native",
+        "params": [
+          "id"
+        ]
+      },
+      "github-connect-callback": {
+        "path": "/v1/github-connect-callback",
+        "params": [
+          "state",
+          "code?",
+          "installationId?",
+          "setupAction?",
+          "error?"
+        ]
+      },
+      "gitlab-connect-callback": {
+        "path": "/v1/gitlab-connect-callback",
+        "params": [
+          "state",
+          "code?",
+          "error?"
+        ]
+      },
+      "bitbucket-connect-callback": {
+        "path": "/v1/bitbucket-connect-callback",
+        "params": [
+          "state",
+          "code?",
+          "error?"
+        ]
+      },
+      "azure-devops-connect-callback": {
+        "path": "/v1/azure-devops-connect-callback",
+        "params": [
+          "state",
+          "code?",
+          "error?"
+        ]
+      },
+      "onepassword-oauth-callback": {
+        "path": "/v1/onepassword-oauth-callback",
+        "params": [
+          "state",
+          "code?",
+          "error?",
+          "integrationKey?"
+        ]
+      },
+      "onepassword-approval-callback": {
+        "path": "/v1/onepassword-approval-callback",
+        "params": [
+          "accessRequestId",
+          "status",
+          "error?"
+        ]
+      },
+      "open": {
+        "path": "/v1/open",
+        "params": []
+      },
+      "prompt": {
+        "path": "/v1/prompt",
+        "params": [
+          "id?",
+          "text"
+        ]
+      },
+      "create-team-bot": {
+        "path": "/v1/create-team-bot",
+        "params": []
+      },
+      "settings": {
+        "path": "/v1/settings",
+        "params": [
+          "id"
+        ]
+      },
+      "thread": {
+        "path": "/v1/thread",
+        "params": [
+          "agent?",
+          "id"
+        ]
+      },
+      "task": {
+        "path": "/v1/task",
+        "params": [
+          "agent?",
+          "id"
+        ]
+      },
+      "vault": {
+        "path": "/v1/vault",
+        "params": [
+          "id"
+        ]
+      },
+      "sidebar": {
+        "path": "/v1/sidebar",
+        "params": [
+          "target?",
+          "automation?",
+          "agent?",
+          "tab?"
+        ]
+      }
+    }
+  },
+  "entrypoints": [
+    {
+      "id": "overlay:bot-templates",
+      "label": "Bot Templates",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:computer",
+      "label": "Computer",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:galleries",
+      "label": "Galleries",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:grok-bot-slack",
+      "label": "Grok Bot Slack",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (slack_bots)",
+      "factsRead": [
+        "grok_bot_personal_slack",
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:grok-bot-team",
+      "label": "Grok Bot Team",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (team_bots)",
+      "factsRead": [
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:grok-bot-team/manage-files",
+      "label": "Manage Files",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (team_bots)",
+      "factsRead": [
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:grok-bot-team/manage-plugins",
+      "label": "Manage Plugins",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (team_bots)",
+      "factsRead": [
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:grok-bot-team/manage-skills",
+      "label": "Manage Skills",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (team_bots)",
+      "factsRead": [
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:passkey-enrollment",
+      "label": "Passkey Enrollment",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (gate)",
+      "factsRead": [
+        "grok_bot_spend_approval_passkey"
+      ]
+    },
+    {
+      "id": "overlay:plugins",
+      "label": "Plugins",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:settings",
+      "label": "Settings",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:settings/computer",
+      "label": "Computer",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:settings/permissions",
+      "label": "Permissions",
+      "surface": "overlay",
+      "withoutFacts": "hidden",
+      "factsRead": [
+        "sand_permissions_panel"
+      ]
+    },
+    {
+      "id": "overlay:settings/updates",
+      "label": "Updates",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:settings/usage",
+      "label": "Usage",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:settings/vault",
+      "label": "Vault",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    },
+    {
+      "id": "overlay:team-agents",
+      "label": "Team Agents",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (team_bots)",
+      "factsRead": [
+        "team_bots"
+      ]
+    },
+    {
+      "id": "overlay:unified-billing",
+      "label": "Unified Billing",
+      "surface": "overlay",
+      "withoutFacts": "unavailable (unified_billing)",
+      "factsRead": [
+        "unified_billing"
+      ]
+    },
+    {
+      "id": "overlay:widget-gallery",
+      "label": "Widget Gallery",
+      "surface": "overlay",
+      "withoutFacts": "available",
+      "factsRead": []
+    }
+  ],
+  "actions": {
+    "actions": [
+      {
+        "id": "theme",
+        "kind": "pick",
+        "risk": "safe",
+        "label": "Theme",
+        "target": {
+          "kind": "settings",
+          "anchor": "theme"
+        },
+        "values": [
+          {
+            "value": "system",
+            "label": "Follow System"
+          },
+          {
+            "value": "light",
+            "label": "Light"
+          },
+          {
+            "value": "dark",
+            "label": "Dark"
+          }
+        ]
+      },
+      {
+        "id": "accent",
+        "kind": "pick",
+        "risk": "safe",
+        "label": "Accent",
+        "target": {
+          "kind": "settings",
+          "anchor": "accent"
+        },
+        "values": [
+          {
+            "value": "black",
+            "label": "Black"
+          },
+          {
+            "value": "bot-color",
+            "label": "Bot color"
+          }
+        ]
+      },
+      {
+        "id": "spell-check",
+        "kind": "toggle",
+        "risk": "safe",
+        "label": "Check Spelling While Typing",
+        "target": {
+          "kind": "settings",
+          "anchor": "spell-check"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "hardware-acceleration",
+        "kind": "toggle",
+        "risk": "safe",
+        "label": "Use hardware acceleration",
+        "target": {
+          "kind": "settings",
+          "anchor": "hardware-acceleration"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "auto-review",
+        "kind": "toggle",
+        "risk": "consequential",
+        "reason": "security",
+        "label": "Auto-review",
+        "target": {
+          "kind": "settings",
+          "anchor": "auto-review"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "security-keys",
+        "kind": "toggle",
+        "risk": "consequential",
+        "reason": "security",
+        "label": "Use hardware security keys",
+        "target": {
+          "kind": "settings",
+          "anchor": "security-keys"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "local-execution",
+        "kind": "pick",
+        "risk": "consequential",
+        "reason": "security",
+        "label": "Execution on this computer",
+        "target": {
+          "kind": "settings",
+          "anchor": "local-execution",
+          "control": "Execution on this computer"
+        },
+        "values": [
+          {
+            "value": "always",
+            "label": "Always allow"
+          },
+          {
+            "value": "ask",
+            "label": "Ask every time"
+          },
+          {
+            "value": "never",
+            "label": "Never allow"
+          }
+        ]
+      },
+      {
+        "id": "egress",
+        "kind": "toggle",
+        "risk": "consequential",
+        "reason": "security",
+        "label": "Route traffic through this computer",
+        "target": {
+          "kind": "settings",
+          "anchor": "egress"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "update-channel",
+        "kind": "pick",
+        "risk": "consequential",
+        "reason": "declared",
+        "label": "Update Track",
+        "target": {
+          "kind": "settings",
+          "anchor": "update-channel"
+        },
+        "values": []
+      },
+      {
+        "id": "automatic-updates",
+        "kind": "toggle",
+        "risk": "consequential",
+        "reason": "declared",
+        "label": "Automatic Updates",
+        "target": {
+          "kind": "settings",
+          "anchor": "automatic-updates"
+        },
+        "values": [
+          {
+            "value": "on",
+            "label": "on"
+          },
+          {
+            "value": "off",
+            "label": "off"
+          }
+        ]
+      },
+      {
+        "id": "upgrade",
+        "kind": "navigate",
+        "risk": "consequential",
+        "reason": "declared",
+        "label": "Upgrade plan",
+        "target": {
+          "kind": "settings",
+          "anchor": "plan"
+        }
+      },
+      {
+        "id": "plugins",
+        "kind": "navigate",
+        "risk": "safe",
+        "label": "Open the Plugins page",
+        "target": {
+          "kind": "deep-link",
+          "route": "marketplace"
+        }
+      },
+      {
+        "id": "details",
+        "kind": "navigate",
+        "risk": "safe",
+        "label": "Open a details tab",
+        "target": {
+          "kind": "deep-link",
+          "route": "sidebar",
+          "param": "tab"
+        },
+        "values": [
+          {
+            "value": "overview",
+            "label": "overview"
+          },
+          {
+            "value": "routines",
+            "label": "routines"
+          },
+          {
+            "value": "media",
+            "label": "media"
+          },
+          {
+            "value": "computer",
+            "label": "computer"
+          },
+          {
+            "value": "meetings",
+            "label": "meetings"
+          },
+          {
+            "value": "members",
+            "label": "members"
+          }
+        ]
+      },
+      {
+        "id": "thread",
+        "kind": "navigate",
+        "risk": "safe",
+        "label": "Open a thread",
+        "target": {
+          "kind": "deep-link",
+          "route": "thread",
+          "param": "id"
+        },
+        "valuePattern": "[0-9a-f]{10}"
+      }
+    ],
+    "unclassified": [
+      {
+        "anchor": "auto-review-rules",
+        "role": "switch",
+        "name": "Auto-review",
+        "reason": "no client binding changes this control"
+      },
+      {
+        "anchor": "auto-review-rules",
+        "role": "textbox",
+        "name": "Custom Rule draft",
+        "reason": "free-form input has no allowed-value list"
+      },
+      {
+        "anchor": "auto-review-rules",
+        "role": "combobox",
+        "name": "Rule behavior",
+        "reason": "no client binding changes this control"
+      },
+      {
+        "anchor": "messages",
+        "role": "switch",
+        "name": "Use Messages",
+        "reason": "no client binding changes this control"
+      }
+    ]
+  },
+  "annotations": {
+    "settings.openers": [
+      "There is no gear icon in the chat and no macOS Preferences menu item."
+    ],
+    "sidebar.roster": [
+      "Team Bots sit inline in the roster with a team mark; there is no separate Team Bots region."
+    ],
+    "sidebar.botActions.Delete": [
+      "Delete is not in Settings. There is no archive; hiding keeps the Bot and its chat."
+    ],
+    "sidebar.targets": [
+      "Tasks are listed on the Details view of the Bot details pane in both layouts; only Tasks with a webhook trigger show these fields."
+    ],
+    "settings.row.update-computer": [
+      "It moves the box to a fresh instance while keeping files and logins, so installed software (apt/npm/pip packages, CLIs, docker images) must be reinstalled."
+    ],
+    "settings.row.reset-computer": [
+      "It restores from the last saved snapshot and can lose recent unsynced work, so steer users to Update first.",
+      "A reset never touches memory that lives off the computer; memory kept on the computer is inside the snapshot it restores."
+    ],
+    "infoPane.simplified.bot": [
+      "The Bot's label (its one-line title) sits under the name on accounts that show it and is edited in place like the name. There is no instructions or description text field in this layout for a personal Bot; it changes how it behaves when told in chat."
+    ],
+    "settings.row.update-channel": [
+      "Most accounts have only the Stable track and never see this row, so do not send a user to it unless they already see it."
+    ],
+    "chat.messages": [
+      "A sent message can be reacted to, replied to, copied, and have its attachments downloaded, and a link to it can be copied; a message that renders a page can be opened as one. There is no delete, edit, archive, or pin for a sent message; only a message that failed to send can be deleted."
+    ],
+    "plugins": [
+      "Plugins (connectors, MCP servers, and the app's own plugins) are managed on the Plugins page, not in Settings; there is no Plugins tab in Settings.",
+      "Each plugin opens its own detail page from the Plugins page; connecting, reconnecting, and removing happen there."
+    ],
+    "plugins.native.email": [
+      "A Bot's email address is claimed here, on the Email plugin's page; it is not a Settings row."
+    ],
+    "plugins.native.onepassword": [
+      "Connected 1Password accounts are listed on this page. A vault connected with a token shows \"Refresh vault\" and \"Remove\" (plus \"Update\" while its access is expiring or has lapsed); an account signed in through 1Password shows \"Disconnect\" (plus \"Reconnect\" once the connection lapses). Disconnecting 1Password happens here."
+    ],
+    "teamBots": [
+      "A Bot is shared with a team from the Share action in the Details pane header, which asks the Bot to make a Team Bot copy; it is offered for a Bot other than the main Bot.",
+      "\"Create a copy\", in the same Share menu, shares a template link and does not need a team."
+    ],
+    "mobile": [
+      "The phone app lays its Settings and Bot details out differently and has no local computer of its own.",
+      "Settings, plugin, bot-template and agent links (grokbot://app/v1/settings, /plugin/add, /bot-template, /agent) open on the phone too, a settings link on the screen its row's phone marking names, so those links are paths that work on both apps; desktop-only routes (the sidebar account name, the Cmd+, shortcut, context menus) are not.",
+      "Sidebar links (grokbot://app/v1/sidebar) are desktop-only: the phone has no Bot details pane; its stand-in is the Bot profile described below.",
+      "For anything else, give phone users the outcome and say which steps need the desktop app."
+    ]
+  }
+}

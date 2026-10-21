@@ -1,0 +1,2967 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MyGrokbot</title>
+<link rel="icon" href="/favicon.ico" />
+<style>
+  /* Light, macOS-like surface. Colours follow the reference design rather than
+     Telegram's blue, but the *structure* of the message stream is Telegram's:
+     three tiers (message / service / system card) plus sender grouping. */
+  :root {
+    --bg: #f2f2f4; --surface: #ffffff; --surface-2: #f7f7f8;
+    /* Panels are white by default; a row is grey when selected. */
+    --rail: #ffffff;
+    --rail-hover: #f2f4f7;
+    --rail-active: #e9edf2;
+    /* Telegram's default light chat canvas: the gradient underneath, the bundled paper
+       doodle pattern blended over it. */
+    --chat-bg: #dfe6ec;
+    --chat-grad-a: #dfe9f1;
+    --chat-grad-b: #cfdce8;
+    --chat-pattern-opacity: .5;
+    --chat-pattern-blend: soft-light;
+    --reasoning-bg: #eef2f6;
+    --reasoning-hover: #e6ecf2;
+    --reasoning-rule: #c9d3de;
+    --reasoning-border: rgba(0,0,0,.07);
+    --line: #e3e3e6; --line-strong: #d5d5da;
+    --text: #16181c; --dim: #75757c; --faint: #a0a0a8;
+    --accent: #2f6fed; --bubble-in: #ffffff; --bubble-out: #1f2226;
+    --warn: #b25e00; --err: #c0392b; --ok: #1a7f4b;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101114; --surface: #17181c; --surface-2: #1d1f24;
+      --rail: #17181c;
+      --rail-hover: #1f232a;
+      --rail-active: #2a2f38;
+      --chat-bg: #0f1216;
+      --chat-grad-a: #131a22;
+      --chat-grad-b: #0b1015;
+      --chat-pattern-opacity: .22;
+      --chat-pattern-blend: soft-light;
+      --reasoning-bg: #1a1e24;
+      --reasoning-hover: #21262e;
+      --reasoning-rule: #38414c;
+      --reasoning-border: rgba(255,255,255,.08);
+      --line: #26282e; --line-strong: #33363d;
+      --text: #e8e9ec; --dim: #9a9ba2; --faint: #6b6c73;
+      --accent: #6f9dff; --bubble-in: #1d1f24; --bubble-out: #2f6fed;
+      --warn: #e0b050; --err: #ff6b5e; --ok: #4ade80;
+      --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    background: var(--bg); color: var(--text);
+    /* tweb: --messages-text-size: 16px; service = -1px; time = -4px */
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app {
+    /* minmax(0, …) on every track: without it a wide child (a long command in a card,
+       or a row of tabs) expands its track and the whole layout spills sideways. */
+    display: grid;
+    /* Pane width scales with the viewport instead of being pinned at 300px, so a wide
+       window gives the conversation more room and a narrow one still fits. */
+    grid-template-columns: var(--rail-w, 260px) minmax(0, 1fr) var(--pane-w, clamp(240px, 22vw, 340px));
+    height: 100%; width: 100%; max-width: 100vw; overflow: hidden;
+    background: var(--surface);
+    transition: grid-template-columns .18s ease;
+  }
+  /* One rule for every width: the pane is open unless `no-pane` is set. Narrow screens
+     simply start with `no-pane` applied by script, so the button always means the same
+     thing ("show/hide details") instead of flipping meaning at a breakpoint. */
+  /* Visibility is decided by exactly one of these, and .no-pane wins only where it is
+     the active regime — see the media queries below, which re-assert the opposite. */
+  #app.no-pane { --pane-w: 0px; }
+  #app.no-pane:not(.overlay-open):not(.pane-open) .pane { display: none; }
+  #app.no-rail { --rail-w: 72px; }
+  #app.no-rail .rail { display: none; }
+
+  @media (max-width: 1200px) {
+    #app { grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr); }
+    #app.overlay-open {
+      grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr) clamp(240px, 26vw, 320px);
+    }
+    #app.overlay-open .pane { display: flex; }
+  }
+  /* Under 820px the conversation takes the whole width and both side panels become
+     overlays. Cramming three tracks into a phone gives two unusable slivers. */
+  @media (max-width: 820px) {
+    #app { grid-template-columns: minmax(0, 1fr); position: relative; }
+    #app.overlay-open { grid-template-columns: minmax(0, 1fr); }
+    #app .rail, #app .pane {
+      position: absolute; top: 0; bottom: 0; z-index: 20;
+      width: min(86vw, 320px); box-shadow: 0 0 0 1px var(--line), 0 8px 32px rgba(0,0,0,.18);
+      display: none;
+    }
+    #app .rail { left: 0; }
+    #app .pane { right: 0; width: min(92vw, 360px); }
+    /* At this width only one panel is ever open, and only via an explicit class. */
+    #app.rail-open .rail, #app.pane-open .pane,
+    #app.no-pane.pane-open .pane, #app.no-rail.rail-open .rail { display: flex; }
+    #app.rail-open::before, #app.pane-open::before {
+      content: ''; position: absolute; inset: 0; background: rgba(0,0,0,.28); z-index: 10;
+    }
+    /* Keep the controls that toggle the overlay clickable above the backdrop. */
+    .chat-head { position: relative; z-index: 30; }
+    #toggleRail, #toggleInfo { position: relative; z-index: 31; }
+  }
+  #app.no-rail .rail-head .brand, #app.no-rail .search,
+  #app.no-rail .agent .meta, #app.no-rail .rail-foot { display: none; }
+  #app.no-rail .agent { justify-content: center; }
+
+  /* ---------- left rail: roster ---------- */
+  .rail { background: var(--rail); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .rail-head { padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; }
+  .rail-head .brand { font-weight: 650; font-size: 13px; letter-spacing: .2px; flex: 1; }
+  /* The generic button rule adds padding; a grid button must own its box or the glyph
+     sits low. line-height:0 + place-items:center keeps "+" optically centred. */
+  .icon-btn { width: 26px; height: 26px; display: inline-grid; place-items: center;
+    padding: 0; margin: 0; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--surface); cursor: pointer; color: var(--text);
+    font-size: 15px; line-height: 0; font-weight: 500; }
+  .icon-btn:hover { border-color: var(--line-strong); }
+  .search { margin: 0 10px 8px; position: relative; }
+  .search input { width: 100%; padding: 6px 10px 6px 28px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--text);
+    font: inherit; font-size: 12.5px; outline: none; }
+  .search input:focus { border-color: var(--accent); }
+  .search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+    width: 13px; height: 13px; color: var(--faint); pointer-events: none; }
+  #agents { overflow: auto; padding: 0 8px 10px; flex: 1; }
+  .agent { display: flex; gap: 10px; align-items: center; padding: 9px 8px;
+    border-radius: 9px; cursor: pointer; }
+  .agent:hover { background: rgba(0,0,0,.035); }
+  .agent:hover { background: var(--rail-hover); }
+  /* selected = grey, not white-on-grey */
+  .agent.active { background: var(--rail-active); box-shadow: none; }
+  .avatar { width: 34px; height: 34px; border-radius: 11px; flex: none; display: grid;
+    place-items: center; font-size: 12px; font-weight: 700; color: #fff; }
+  .agent .meta { min-width: 0; flex: 1; display: block; }
+  .agent .row1 { display: flex; align-items: baseline; gap: 6px; }
+  .agent .name { font-weight: 600; font-size: 13px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .agent .time { margin-left: auto; font-size: 10.5px; color: var(--faint); flex: none; }
+  .agent .sub { color: var(--dim); font-size: 11.5px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; display: block; }
+  .rail-foot { border-top: 1px solid var(--line); padding: 8px 10px 10px; }
+  .rail-item { display: flex; align-items: center; gap: 8px; padding: 7px 6px;
+    border-radius: 7px; cursor: pointer; color: var(--dim); font-size: 12.5px; }
+  .rail-item:hover { background: rgba(0,0,0,.035); color: var(--text); }
+
+  /* ---------- centre: chat ---------- */
+  main { position: relative; display: flex; flex-direction: column;
+    min-width: 0; min-height: 0; overflow: hidden; }
+  .chat-head { height: 50px; flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .chat-head .title { font-weight: 650; font-size: 14px; line-height: 1.2; }
+  .chat-head .sub { color: var(--dim); font-size: 11.5px; max-width: 420px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-head .spacer { flex: 1; }
+  .pill { font: 11px/1 var(--mono); color: var(--dim); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 8px; white-space: nowrap; }
+  .pill.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+  .pill.btn { cursor: pointer; }
+  .pill.btn:hover { border-color: var(--line-strong); color: var(--text); }
+  #modelWrap { position: relative; }
+
+  /* The picker hangs under the pill, sized to the model names, scrollable, and closed by
+     clicking anywhere else or Escape. */
+  #modelMenu { position: absolute; top: calc(100% + 6px); inset-inline-end: 0; z-index: 40;
+    width: min(340px, 82vw); max-height: 60vh; overflow-y: auto; padding: 6px;
+    background: var(--surface); border: 1px solid var(--line-strong); border-radius: 11px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.18); display: none; }
+  #modelMenu.open { display: block; }
+  #modelMenu .mhead { display: flex; gap: 6px; padding: 4px 4px 8px; }
+  #modelMenu input { flex: 1; min-width: 0; padding: 6px 9px; border-radius: 7px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: 12.5px; outline: none; }
+  #modelMenu input:focus { border-color: var(--accent); }
+  #modelMenu .mitem { display: flex; align-items: baseline; gap: 8px; padding: 7px 9px;
+    border-radius: 7px; cursor: pointer; font-size: 12.5px; }
+  #modelMenu .mitem:hover { background: var(--surface-2); }
+  #modelMenu .mitem.cur { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  #modelMenu .mid { font-family: var(--mono); font-size: 12px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #modelMenu .mctx { margin-left: auto; color: var(--faint); font-size: 10.5px; flex: none; }
+  #modelMenu .mempty { padding: 12px 10px; color: var(--faint); font-size: 12px; }
+  .pill.down { color: var(--err); }
+
+  /* Telegram's chat canvas, assembled the way tweb does it:
+       1. a vertical gradient (the colour wash)
+       2. assets/pattern.svg tiled over it, blended soft-light
+     `background-attachment: local` keeps both pinned to the scroller. */
+  /* The message stream reaches the bottom of the window; the composer floats over it
+     with a gradient scrim, which is what makes the last bubble look cut off otherwise. */
+  /* A thin, low-contrast scrollbar: the default one is ~15px wide and visually loud
+     against a paper background. 8px, translucent, and it only darkens on hover. */
+  #log { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.18) transparent; }
+  #log::-webkit-scrollbar { width: 8px; height: 8px; }
+  #log::-webkit-scrollbar-track { background: transparent; }
+  #log::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,.16); border-radius: 8px;
+    border: 2px solid transparent; background-clip: content-box;
+  }
+  #log::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,.3);
+    background-clip: content-box; }
+  /* The right pane scrolls too; keep it consistent. */
+  .pane-body { scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.18) transparent; }
+  .pane-body::-webkit-scrollbar { width: 8px; }
+  .pane-body::-webkit-scrollbar-track { background: transparent; }
+  .pane-body::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,.16); border-radius: 8px;
+    border: 2px solid transparent; background-clip: content-box;
+  }
+
+  /* The stream owns the whole column (under the composer too). The composer is an
+     overlay, so messages scroll behind it instead of being clipped above it. */
+  #log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
+    padding: 8px 0 96px; display: flex; flex-direction: column; align-items: stretch;
+    background: transparent; }
+
+  /* The blend above mixes with the element's own background-color, so the pattern's
+     strength is tuned with a pseudo-element veil instead of a raw opacity. */
+  #log::before {
+    content: ''; position: sticky; top: 0; display: block; height: 0; z-index: 0;
+    pointer-events: none;
+  }
+
+  /* Telegram-style stream: three tiers. */
+  /* tweb date separator is the same service pill, only bolder. */
+  /* Date separator: small and tight (tweb uses the service-message metrics: 13px text,
+     .28rem/.63rem padding). It also pulls itself up toward the header so it does not
+     read as a section heading. */
+  .day { flex: 0 0 auto; align-self: center; margin: 12px 0 0; padding: 2px 9px; border-radius: 12px;
+    background: rgba(0,0,0,.05); color: var(--dim); font-size: 12.5px; font-weight: 600;
+    line-height: 1.45; }
+  .day:not(:first-child) { margin-top: 10px; }
+  /* tweb .bubble.service .service-msg: padding .28125rem .625rem, radius .875rem,
+     font-size var(--messages-service-text-size) (13px), translucent plate. */
+  .service { flex: 0 0 auto; align-self: center; max-width: 78%; margin: 12px 0 0; padding: 4.5px 10px;
+    border-radius: 14px; background: rgba(0,0,0,.055); color: var(--dim);
+    font-size: 15px; line-height: 1.35; text-align: center; }
+  @media (prefers-color-scheme: dark) {
+    .service { background: rgba(255,255,255,.07); }
+  }
+  /* The column is capped but must be centred in a wide log; without the auto margins
+     everything hugged the left edge with a growing gap on the right. */
+  /* tweb's $bubble-margin is .125rem (2px) inside a group and $bubble-margin-big .375rem
+     (6px) between groups. A change of sender always starts a new group, so it gets the
+     larger gap; consecutive bubbles of one sender stay tight. */
+  .msg { flex: 0 0 auto; display: flex; gap: 8px; margin-block-start: 0;
+    /* The column reserves the avatar gutter on the left for incoming bubbles; outgoing
+       bubbles have no avatar, so they get the same gutter mirrored on the right. That is
+       what makes both sides' usable width identical. */
+    padding: 0 14px; max-width: 780px; width: 100%;
+    margin-inline: auto; margin-block: 0; }
+  /* One rhythm, driven only by margin-block-start so gaps never stack:
+       2px  inside a sender's group
+      12px  a new exchange (sender change, or after a card)
+       2px  an answer that continues a process panel */
+  .msg.group-mid { margin-block-start: 2px; }
+  .msg.group-end { margin-block-start: 2px; }
+  .msg.group-start { margin-block-start: 12px; }
+  .msg.group-single { margin-block-start: 12px; }
+  .reasoning + .msg,
+  .reasoning + .msg.group-single,
+  .reasoning + .msg.group-start { margin-block-start: 2px; }
+  .msg + .cardwrap, .reasoning + .cardwrap { margin-block-start: 12px; }
+  .cardwrap + .msg { margin-block-start: 12px; }
+  .msg.group-mid .avatar, .msg.group-end .avatar { visibility: hidden; }
+  .msg .avatar { width: 30px; height: 30px; border-radius: 9px; font-size: 11px;
+    align-self: flex-end; margin-bottom: 2px; }
+  /* Both sides share the same usable width (tweb: the bubble is capped by the message
+     column, not by the text). Without flex-basis:100% a long message of mine stopped
+     short of the other side's left edge. */
+  .msg .stack { min-width: 0; flex: 1 1 100%; display: flex; flex-direction: column;
+    align-items: flex-start; }
+  .msg .who { font-size: 11px; color: var(--dim); margin: 0 0 2px 2px; font-weight: 600; }
+  /* Telegram's bubble is a positioned box; the time is absolutely placed at its bottom
+     end, and the text reserves that corner with padding so the last line never runs
+     under it. Two layers: .btext (flow) then .stamp (absolute, bottom-end). */
+  .bubble { background: var(--bubble-in); border: 1px solid transparent; box-sizing: border-box;
+    border-radius: 15px; padding: 6px 10px 6px; white-space: pre-wrap;
+    overflow-wrap: anywhere; word-break: break-word; min-width: 0;
+    width: fit-content; max-width: 100%; box-shadow: 0 1px 1px rgba(0,0,0,.03);
+    user-select: text; position: relative;
+    padding-bottom: 7px; }
+  /* Attachment chips inside a sent bubble. */
+  /* Quoted message shown above the reply. */
+  .quote { display: block; margin: 0 0 6px; padding: 5px 9px; border-radius: 8px;
+    border-inline-start: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 9%, transparent); font-size: 12px; }
+  .quote .qwho { display: block; font-weight: 600; color: var(--accent); font-size: 11.5px; }
+  .quote .qtext { display: block; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .msg.mine .quote { background: rgba(255,255,255,.16);
+    border-inline-start-color: rgba(255,255,255,.7); }
+  .msg.mine .quote .qwho { color: rgba(255,255,255,.9); }
+  .msg.mine .quote .qtext { color: rgba(255,255,255,.75); }
+
+  .abox { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: flex-start; }
+  .aimg { max-width: 260px; max-height: 260px; border-radius: 10px; cursor: zoom-in;
+    display: block; object-fit: cover; }
+  .afile { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
+    border-radius: 8px; font-size: 11.5px; max-width: 240px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); }
+  .msg:not(.mine) .afile { background: var(--surface-2); border-color: var(--line); }
+
+  .md-rule { display: block; height: 1px; background: var(--line-strong);
+    margin: 10px 0; opacity: .8; }
+  .bubble .btext { white-space: pre-wrap; font-size: 16px; line-height: 1.3125;
+    overflow-wrap: anywhere; word-break: break-word;
+    /* the last line must not run under the time: reserve its width inline */
+    display: block; }
+  .bubble.has-time .btext { padding-inline-end: 0; }
+  /* An inline-block spacer the width of the time, pulled onto the last line, is what
+     makes the text wrap around the corner instead of under it. */
+  /* Reserve the corner inside the text flow (tweb does this with padding on the last
+     line block). A zero-height inline-block after the text keeps the wrap correct
+     without adding a line. */
+  /* Reserve room for time + tokens. Kept in one custom property so the spacer and the
+     stamp cannot drift apart. */
+  /* The reserved corner is measured per bubble in JS: a bare "04:13" needs far less room
+     than "04:13 · 3076 tok · 4 tok/s", and a fixed slot let the text run under the stamp. */
+  .bubble { --slot-w: 54px; }
+  .bubble.has-time .btext::after {
+    content: ''; display: inline-block; width: var(--slot-w); height: 0;
+    vertical-align: baseline;
+  }
+  .msg.mine { flex-direction: row-reverse; align-self: flex-end;
+    padding-inline-start: calc(14px + 38px); padding-inline-end: 14px; }
+  .msg.mine .stack { align-items: flex-end; }
+  /* my bubble may not exceed the same column width theirs does */
+  .msg.mine .bubble { max-width: 100%; }
+  .msg.mine { margin-inline-start: auto; margin-inline-end: auto; }
+  .msg.mine .bubble { background: var(--bubble-out); color: #fff; border-color: transparent; }
+  /* tweb: .time { position:absolute; bottom:4px; inset-inline-end:8px } and
+     .time-inner sits on the same baseline as the last text line. */
+  /* tweb: bottom = padding-bottom - 6px => -1px, so the time rides the last line. */
+  .entry .edit, .entry .del { font-size: 10.5px; font-weight: 500; color: var(--faint);
+    cursor: pointer; margin-inline-start: 8px; }
+  .entry .edit:hover { color: var(--accent); }
+  .entry .del:hover { color: var(--err); }
+  button.mini { font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--dim);
+    cursor: pointer; text-transform: none; letter-spacing: 0; }
+  button.mini:hover { color: var(--text); border-color: var(--line-strong); }
+
+  .pmark { align-self: flex-start; font-size: 10.5px; color: var(--faint);
+    letter-spacing: .3px; margin-bottom: 2px; padding: 1px 6px; border-radius: 5px;
+    background: rgba(0,0,0,.04); }
+  .msg.mine .pmark { display: none; }
+  .msg .stamp { position: absolute; inset-inline-end: 9px; bottom: 4px;
+    display: flex; align-items: center; gap: 3px;
+    font-size: 12px; line-height: 1; white-space: nowrap; color: var(--faint);
+    pointer-events: none; }
+  .msg.mine .stamp { color: rgba(255,255,255,.75); }
+  /* A send still on its way: tweb shows a clock in the time slot. */
+  .msg.pending .stamp::before {
+    content: ''; display: inline-block; width: 8px; height: 8px;
+    border: 1px solid currentColor; border-radius: 50%; margin-inline-end: 3px;
+    vertical-align: -1px; border-top-color: transparent; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .msg.pending .bubble { opacity: .72; }
+  .msg.group-start .stamp, .msg.group-mid .stamp { display: none; }
+  /* Incoming: the left edge is the "stack" side, so groups flatten it. */
+  .msg.group-start .bubble { border-bottom-left-radius: 5px; }
+  .msg.group-mid .bubble { border-top-left-radius: 5px; border-bottom-left-radius: 5px; }
+  .msg.group-end .bubble { border-top-left-radius: 5px; }
+  /* Outgoing: mirrored, the right edge is the stack side. */
+  .msg.mine.group-start .bubble { border-bottom-left-radius: 15px; border-bottom-right-radius: 5px; }
+  .msg.mine.group-mid .bubble { border-top-left-radius: 15px; border-bottom-left-radius: 15px;
+    border-top-right-radius: 5px; border-bottom-right-radius: 5px; }
+  .msg.mine.group-end .bubble { border-top-left-radius: 15px; border-top-right-radius: 5px; }
+
+  /* System cards: approvals and questions keep a border because they demand action. */
+  /* Cards (approval, question, error, widget) sit in the same column as a bubble:
+     780px, 14px inline, and the 38px avatar gutter on the left. */
+  .card { flex: 0 0 auto; position: relative; z-index: 1; pointer-events: auto;
+    box-sizing: border-box; max-width: 780px; width: 100%;
+    margin: 0; border-radius: 15px;
+    border: 1px solid var(--line-strong);
+    background: var(--surface); box-shadow: var(--shadow); overflow: hidden;
+    padding: 0; }
+  .card > * { padding-inline: 13px; }
+  /* the column itself is provided by a wrapper so inline padding does not clip content */
+  .cardwrap { flex: 0 0 auto; max-width: 780px; width: 100%; margin: 12px auto 0;
+    padding: 0 14px 0 calc(14px + 38px); box-sizing: border-box; min-width: 0;
+    display: flex; }
+  .card .ct { padding: 9px 13px; font-size: 11px; font-weight: 700; letter-spacing: .4px; position: relative; z-index: 2;
+    text-transform: uppercase; color: var(--dim); border-bottom: 1px solid var(--line);
+    background: var(--surface-2); display: flex; gap: 8px; align-items: center; }
+  .card .cb { padding: 8px 13px 10px; font: 12px/1.55 var(--mono); white-space: pre-wrap;
+    overflow-wrap: anywhere; word-break: break-word; max-height: 260px;
+    overflow-y: auto; overflow-x: hidden; min-width: 0; }
+  /* A tool step follows DSH: one quiet line — caret, icon, verb, "·", argument
+     preview — and nothing else until it is opened. No border, no card, no timing
+     noise; a burst of ten calls stays scannable. */
+  .step { flex: 0 0 auto; min-width: 0; width: 100%; margin: 2px 0 0;
+    padding: 0; box-sizing: border-box; }
+  .step .s-head { display: flex; align-items: center; gap: 6px; padding: 3px 0;
+    cursor: pointer; color: var(--dim); font-size: 13px; border-radius: 6px;
+    min-width: 0; }
+  .step .s-head:hover { background: rgba(0,0,0,.035); }
+  .step .s-caret { flex: none; width: 10px; font-size: 8px; color: var(--faint);
+    transition: transform .16s ease; }
+  .step.open .s-caret { transform: rotate(90deg); }
+  .step .s-ico { flex: none; width: 13px; text-align: center; font-size: 11px;
+    color: var(--faint); line-height: 1; }
+  .step .s-title { flex: none; }
+  .step .s-sep { flex: none; color: var(--faint); }
+  .step .s-arg { min-width: 0; flex: 0 1 auto; color: var(--faint);
+    font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step .s-time { flex: none; margin-inline-start: auto; color: var(--faint);
+    font-size: 11px; font-variant-numeric: tabular-nums; }
+  .step[data-state="running"] .s-title, .step[data-state="running"] .s-ico { color: var(--accent); }
+  .step[data-state="error"] .s-title, .step[data-state="error"] .s-ico { color: var(--err); }
+
+  /* Expanded: a code block with a thin bar, exactly like DSH's tool body. */
+  .step .s-body { display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows .2s cubic-bezier(.4,0,.2,1), opacity .16s ease; }
+  .step .s-body > div { min-height: 0; overflow: hidden; }
+  .step.open .s-body { grid-template-rows: 1fr; opacity: 1; padding: 3px 0 6px 16px; }
+  .step .s-code { border: 1px solid var(--line); border-radius: 8px; overflow: hidden;
+    background: var(--surface); }
+  .step .s-codebar { display: flex; align-items: center; gap: 7px; padding: 5px 9px;
+    background: var(--surface-2); border-bottom: 1px solid var(--line);
+    font-size: 11px; color: var(--faint); }
+  .step .s-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex: none; }
+  .step[data-state="error"] .s-dot { background: var(--err); }
+  .step .s-codelabel { font-family: var(--mono); min-width: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .step .s-copy { margin-inline-start: auto; background: transparent; border: 0;
+    color: var(--faint); font-size: 11px; cursor: pointer; padding: 0 2px; flex: none; }
+  .step .s-copy:hover { color: var(--text); }
+  .step .s-pre { margin: 0; padding: 8px 10px; font: 11.5px/1.55 var(--mono);
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+    color: var(--dim); max-height: 240px; overflow-y: auto; overflow-x: hidden; }
+  .card .cf { padding: 10px 13px; display: flex; gap: 8px; border-top: 1px solid var(--line);
+    flex-wrap: wrap; position: relative; z-index: 2; align-items: center; }
+  .card .cf button { position: relative; z-index: 3; pointer-events: auto;
+    padding: 6px 14px; font-size: 12.5px; font-weight: 500; border-radius: 8px; }
+  /* "Always" is the widest commitment, so it is the quietest: outlined, not filled.
+     Fill is reserved for the single primary "Approve". */
+  .card.approval .cf button[data-a="always"] { background: transparent; color: var(--dim);
+    border-color: var(--line-strong); }
+  .card.approval .cf button[data-a="always"]:hover { color: var(--text);
+    border-color: var(--faint); background: var(--surface-2); }
+  .card.approval .cf button[data-a="approved"] { background: var(--accent);
+    border-color: transparent; color: #fff; }
+  .card.approval .cf button[data-a="denied"] { background: transparent; color: var(--err);
+    border-color: color-mix(in srgb, var(--err) 35%, var(--line-strong)); }
+  .card.approval .cf button[data-a="denied"]:hover { background: color-mix(in srgb, var(--err) 8%, transparent); }
+  /* resolved state is a quiet note, not a button-sized grey bar */
+  .card .cf .resolved { font-size: 12px; color: var(--faint); display: inline-flex;
+    align-items: center; gap: 6px; }
+
+  /* A settled approval folds to one line: verdict, then a shortened command. */
+  .card.card-done { border-color: var(--reasoning-border); background: var(--reasoning-bg);
+    border-radius: 15px; padding: 0; }
+  .card-done .donehead { display: flex; align-items: center; gap: 7px; padding: 8px 13px;
+    cursor: pointer; font-size: 12.5px; color: var(--done-color, var(--dim)); }
+  .card-done .donehead:hover { background: var(--reasoning-hover); }
+  .card-done .doticon { flex: none; font-size: 11px; }
+  .card-done .donetext { flex: none; font-weight: 500; }
+  .card-done .donecmd { flex: 1 1 auto; min-width: 0; font: 11.5px var(--mono);
+    color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-done .donecaret { flex: none; font-size: 8px; color: var(--faint);
+    transition: transform .16s ease; }
+  .card-done.open .donecaret { transform: rotate(90deg); }
+  .card-done .donebody { display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows .2s cubic-bezier(.4,0,.2,1), opacity .16s ease; }
+  .card-done .donebody > pre { min-height: 0; overflow: hidden; margin: 0; }
+  .card-done.open .donebody { grid-template-rows: 1fr; opacity: 1; padding: 0 13px 10px; }
+  .card-done .donebody pre { font: 11.5px/1.55 var(--mono); white-space: pre-wrap;
+    overflow-wrap: anywhere; color: var(--dim); }
+  .card.approval .ct { color: var(--warn); }
+  .card .dotwarn { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+    flex: none; opacity: .9; }
+  .card .ct { gap: 7px; }
+  .card.question .ct { color: var(--accent); }
+  .card.tool .cb { color: var(--dim); }
+  .card.error { border-color: color-mix(in srgb, var(--err) 40%, var(--line-strong)); }
+  .card.error .ct { color: var(--err); }
+  /* A turn's process, following DSH: one header row ("已完成，用时 4分3秒") that folds
+     the reasoning + tool steps beneath it. The header is muted and small; the answer
+     below it is the only thing that reads as content. */
+  .turnproc { max-width: 620px; width: calc(100% - 28px); margin: 4px auto 6px;
+    box-sizing: border-box; min-width: 0; }
+  .turnproc .tp-head { display: flex; align-items: center; gap: 6px; height: 24px;
+    padding: 0 2px; cursor: pointer; color: var(--dim); font-size: 13px;
+    user-select: none; border-radius: 6px; }
+  .turnproc .tp-head:hover { background: rgba(0,0,0,.035); }
+  .turnproc .tp-caret { font-size: 9px; color: var(--faint); flex: none; width: 12px;
+    transition: transform .12s ease; }
+  .turnproc.open .tp-caret { transform: rotate(90deg); }
+  .turnproc .tp-label { flex: none; font-weight: 400; }
+  .turnproc[data-state="running"] .tp-label { color: var(--accent); }
+  .turnproc .tp-meta { color: var(--faint); font-size: 12px; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .turnproc .tp-body { display: none; }
+  .turnproc.open .tp-body { display: block; }
+  /* the process body is indented under the header, like DSH's thinkBody */
+  .turnproc .tp-body > * { margin-inline-start: 16px; margin-inline-end: 0; }
+
+  /* Reasoning, following DSH's ReasoningRow:
+       collapsed  -> a fixed 24px row: icon + "思考过程" + a 2px dot + a one-line ellipsised preview
+       expanded   -> the header stays sticky at the top of the block, body indented under it
+     DSH maps this as data-variant="think", data-state="running|ok", data-expanded, data-preview.
+     No max-height: the log is the only scroller. */
+  /* Same box as .msg: 780px column, 14px inline padding, and the 38px avatar gutter on
+     the left so the panel starts where an incoming bubble starts (63px) and ends where
+     it ends (25px from the right). */
+  .reasoning { flex: 0 0 auto; display: flex; flex-direction: column; max-width: 780px; width: 100%;
+    /* 12px from the question above; the answer below pulls itself up to 2px. */
+    margin: 12px auto 0; padding: 0 14px 0 calc(14px + 38px);
+    box-sizing: border-box; min-width: 0; }
+  /* The painted panel is the head + body only; the wrapper is pure geometry, so the
+     panel's right edge lands exactly where an incoming bubble's does. */
+  .reasoning > .rhead, .reasoning > .rbody { width: 100%; }
+  .reasoning .rhead { display: flex; align-items: center; gap: 0; cursor: pointer;
+    padding: 0 12px; user-select: none; overflow: hidden; min-width: 0; height: 26px;
+    background: var(--reasoning-bg); border: 1px solid var(--reasoning-border);
+    border-inline-start: 2px solid var(--reasoning-rule);
+    border-radius: 15px; transition: background-color .15s ease; }
+  .reasoning .rhead:hover { background: var(--reasoning-hover); }
+  /* When open the head is the panel's top edge: same background, no bottom border, so
+     there is never a transparent strip above the body. */
+  .reasoning.open .rhead { background: var(--reasoning-bg);
+    border-color: var(--reasoning-border);
+    border-inline-start: 2px solid var(--reasoning-rule);
+    border-bottom: 0; border-radius: 15px 15px 0 0; }
+  .reasoning .rcaret { flex: none; width: 12px; font-size: 9px; color: var(--faint);
+    transition: transform .18s ease; display: inline-block; }
+  .reasoning.open .rcaret { transform: rotate(90deg); }
+  .reasoning .rlabel { flex: none; font-weight: 400; color: var(--dim); font-size: 13px;
+    transition: color .2s ease; }
+  .reasoning.open .rlabel { color: var(--text); }
+  /* the 2px separator dot DSH puts between title and preview */
+  .reasoning .rdot { flex: none; width: 2px; height: 2px; border-radius: 1px;
+    background: var(--faint); margin: 0 8px; transition: opacity .18s ease; }
+  .reasoning .rpeek { min-width: 0; flex: 1 1 auto; overflow: hidden; font-size: 12.5px;
+    line-height: 20px; color: var(--faint); white-space: nowrap; text-overflow: ellipsis;
+    display: block; transition: opacity .18s ease; margin-inline-start: 2px; }
+  .reasoning.open .rpeek { opacity: 0; pointer-events: none; }
+  .reasoning.open .rdot { opacity: 0; }
+
+  /* The body animates with grid-template-rows 0fr -> 1fr, which is the only reliable
+     way to transition to auto height. No max-height guess, no jump. */
+  .reasoning .rbody {
+    display: grid; grid-template-rows: 0fr; opacity: 0;
+    transition: grid-template-rows .26s cubic-bezier(.4,0,.2,1), opacity .2s ease,
+                padding-block .26s cubic-bezier(.4,0,.2,1);
+    min-width: 0; padding-block: 0; color: var(--dim); font-size: 13px; line-height: 1.55;
+    overflow: hidden;
+  }
+  .reasoning .rbody > div { min-height: 0; overflow: hidden; }
+  /* The thinking block is a panel, not bare text on the wallpaper: an opaque tint keeps
+     it readable over the pattern and marks it as "not the answer". */
+  .reasoning .rbody > .rstream { padding: 6px 10px 6px 12px; min-width: 0; }
+  .reasoning .rseg { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+    color: var(--dim); }
+  .reasoning .rseg + .rseg { margin-top: 8px; }
+  .reasoning:not(.open) .rbody { visibility: hidden; }
+  /* While expanded, the thinking reads as a quoted note: muted, indented, tinted, with a
+     left rule. That is what keeps it apart from the answer, which stays plain. */
+  .reasoning.open .rbody { grid-template-rows: 1fr; opacity: 1; padding-block: 0; }
+  /* Opaque panel: readable over the wallpaper pattern, visibly not the answer. */
+  /* An opaque panel, rounded like the bubbles (tweb: 15px big / 5px medium). The left
+     edge keeps a 2px rule as the "thinking" cue. */
+  .reasoning.open .rbody > div {
+    padding: 4px 13px 9px;
+    color: var(--dim); font-style: normal;
+    background: var(--reasoning-bg);
+    border: 1px solid var(--reasoning-border);
+    border-top: 0;
+    border-inline-start: 2px solid var(--reasoning-rule);
+    border-radius: 0 0 15px 15px;
+  }
+
+  /* a soft shimmer while the model is still thinking */
+  .reasoning[data-state="running"] .rlabel { color: var(--accent); }
+  /* A turn-scoped notice sits inside the process block, not in the message stream. */
+  .tpnote { font-size: 12px; color: var(--faint); font-style: italic; padding: 2px 0 2px 12px;
+    border-left: 2px solid var(--line-strong); margin: 6px 0 0; }
+
+  .reasoning[data-state="running"] .rlabel::after { content: ' · 进行中'; font-weight: 400;
+    color: var(--faint); }
+  .reasoning[data-state="running"] .rpeek {
+    mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+  }
+  .reasoning summary { cursor: pointer; font-style: normal; font-size: 11px; }
+
+  button { font: inherit; font-size: 12.5px; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 8px; padding: 5px 11px; cursor: pointer;
+    line-height: 1.2; }
+  button:hover { background: var(--surface-2); }
+  button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  button.primary:hover { filter: brightness(1.06); }
+  button.ok { color: var(--ok); }
+  button.no { color: var(--err); }
+
+  /* Telegram-style composer: a floating rounded pill sitting on the wallpaper, with the
+     status line centred under it. No top border — the pill itself separates the areas. */
+  /* Floating pill over a scrim: the messages scroll behind it and fade out, which gives
+     the composer depth instead of a hard cut at the edge of the stream. */
+  /* Close to the stream: the scrim supplies the separation, not empty space. */
+  /* Floats over the stream: absolute inside main, full width, pinned to the bottom. */
+  .composer { position: absolute; inset-inline: 0; bottom: 0; z-index: 3;
+    padding: 6px 16px 12px; background: transparent;
+    display: flex; flex-direction: column; align-items: center; }
+  /* The fade must start *inside* the message stream, otherwise the cut at #log's edge
+     stays visible. It reaches 120px up over the scroller, over the composer, to the
+     bottom of the window. */
+  /* No scrim at all. Telegram does not fade the canvas behind the composer — the
+     wallpaper runs edge to edge and the pill simply floats above it. */
+  .composer::before { content: none; }
+  .composer, .composer .hint, .status { background: transparent; }
+  /* The wallpaper lives on the chat column, not on #log only, so it continues behind
+     the composer and its hint line. #log then draws no background of its own. */
+  main {
+    background-color: var(--chat-bg);
+    background-image:
+      url('/assets/pattern.svg'),
+      linear-gradient(180deg, var(--chat-grad-a) 0%, var(--chat-grad-b) 100%);
+    background-repeat: repeat, no-repeat;
+    background-size: 720px auto, cover;
+    background-position: center top, center;
+    background-blend-mode: var(--chat-pattern-blend), normal;
+  }
+  /* Frosted glass: 90% opaque surface over a blurred backdrop, so the wallpaper tints
+     through without hurting the text contrast. */
+  /* Pending attachments sit above the pill as removable chips. */
+  .chips { display: none; flex-wrap: wrap; gap: 6px; width: 100%; max-width: 780px;
+    margin-bottom: 6px; }
+  .chips.on { display: flex; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; max-width: 260px;
+    padding: 4px 8px 4px 10px; border-radius: 9px; font-size: 12px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(12px); border: 1px solid var(--line);
+    color: var(--text); }
+  .chip .cname { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .chip .cdel { flex: none; border: 0; background: transparent; color: var(--faint);
+    cursor: pointer; padding: 0 2px; font-size: 13px; line-height: 1; }
+  .chip .cdel:hover { color: var(--err); }
+  #attach { flex: none; width: 30px; height: 30px; border-radius: 50%;
+    border: 1px solid var(--line); background: transparent; font-size: 16px;
+    color: var(--dim); cursor: pointer; display: grid; place-items: center;
+    line-height: 0; padding: 0; }
+  #attach:hover { color: var(--text); border-color: var(--line-strong); }
+
+  .composer .box { position: relative; z-index: 5; display: flex; align-items: center; gap: 8px; width: 100%;
+    max-width: 780px; border: 1px solid color-mix(in srgb, var(--line-strong) 70%, transparent);
+    border-radius: 22px; padding: 6px 6px 6px 16px;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: 0 6px 24px rgba(0,0,0,.13), 0 1px 2px rgba(0,0,0,.05),
+                inset 0 1px 0 rgba(255,255,255,.55);
+    transition: box-shadow .15s ease, border-color .15s ease, background-color .15s ease; }
+  .composer .box:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    box-shadow: 0 8px 28px rgba(0,0,0,.15), 0 1px 2px rgba(0,0,0,.05),
+                inset 0 1px 0 rgba(255,255,255,.6); }
+  .composer .box textarea { padding-block: 5px; }
+  /* A 32px button inside a 44px pill needs symmetric margins, not flex-end alignment. */
+  .composer .box button { border-radius: 16px; height: 32px; padding: 0 16px;
+    display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .composer .box textarea { align-self: center; }
+  /* One line of text must sit on the visual centre of the 36px row, so the line box is
+     pinned with an explicit line-height instead of relying on the textarea default. */
+  textarea { flex: 1; resize: none; background: transparent; color: var(--text); border: 0;
+    padding: 0; font: inherit; line-height: 24px; min-height: 24px; max-height: 180px;
+    outline: none; display: block; }
+  /* The hint line is gone; the composer sits a little lower and centres itself. */
+  .composer { padding-block: 10px 14px; }
+  /* A soft backing only behind the pill itself, never across the canvas. */
+
+  #stop { display: none; margin-inline-end: 2px; }
+  #stop.on { display: inline-block; color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--line-strong)); }
+  /* Above the pill, centred; zero height when empty so it never shifts the layout. */
+  .status { font-size: 11.5px; color: var(--dim); padding: 0 16px 4px; min-height: 0;
+    text-align: center; line-height: 1.4; }
+  .status:empty { display: none; }
+
+  /* ---------- right pane: tabs come from uimap.infoPane ---------- */
+  .pane { border-left: 1px solid var(--line); background: var(--rail); display: flex;
+    flex-direction: column; min-height: 0; min-width: 0; overflow: hidden; }
+  /* Three tabs, equal width, never wrap. Six was more than a 300px pane can hold
+     without either a scrollbar or a second line, and both looked worse than merging. */
+  .pane-head { display: flex; align-items: center; gap: 3px; padding: 8px 8px 0; flex: none;
+    min-width: 0; }
+  .tab { flex: 1 1 0; min-width: 0; text-align: center; padding: 5px 4px; border-radius: 7px;
+    font-size: 12px; font-weight: 600; color: var(--dim); cursor: pointer;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    border: 1px solid transparent; }
+  .tab:hover { background: rgba(0,0,0,.04); }
+  .tab.active { background: var(--rail-active); color: var(--text); border-color: transparent; }
+  /* overflow-y only: the pane is a fixed-width column and must never scroll sideways.
+     min-width:0 lets it shrink below its content instead of pushing the grid track. */
+  .pane-body { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
+    padding: 10px 12px 16px; }
+  .sec { display: flex; align-items: center; gap: 8px;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--faint);
+    font-weight: 700; margin: 14px 0 7px; min-width: 0; overflow-wrap: anywhere; }
+  .sec > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sec > button.mini, .sec > button { margin-inline-start: auto; flex: none; }
+  .sec:first-child { margin-top: 2px; }
+  /* minmax(0,1fr): a plain 1fr floors at the content's min-content width, so a long
+     URL widened the whole column. The value column breaks anywhere instead. */
+  .kv { display: grid; grid-template-columns: minmax(56px, 74px) minmax(0, 1fr);
+    gap: 3px 10px; font: 11.5px/1.6 var(--mono); }
+  .kv > span { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+  .kv .k { color: var(--dim); }
+  .entry { border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px;
+    margin-bottom: 7px; background: var(--surface); font-size: 12px;
+    min-width: 0; overflow-wrap: anywhere; }
+  .entry .t { font-weight: 600; margin-bottom: 2px; display: flex; gap: 6px;
+    align-items: center; min-width: 0; overflow-wrap: anywhere; }
+  .entry .m { color: var(--dim); font: 11px/1.45 var(--mono);
+    overflow-wrap: anywhere; word-break: break-word; }
+  .entry .go { margin-left: auto; color: var(--accent); cursor: pointer; font-size: 11px; }
+  .empty { color: var(--faint); font-size: 12px; padding: 10px 2px; }
+
+  /* ---------- command palette ---------- */
+  .palette { position: fixed; inset: 0; background: rgba(0,0,0,.28); display: none;
+    align-items: flex-start; justify-content: center; padding-top: 14vh; z-index: 50; }
+  .palette.open { display: flex; }
+  .palette .panel { width: min(560px, 92vw); background: var(--surface); border-radius: 13px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.28); overflow: hidden; border: 1px solid var(--line-strong); }
+  .palette input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent;
+    color: var(--text); font: inherit; font-size: 14px; padding: 13px 15px; outline: none; }
+  /* ---------- settings panel (Telegram-style) ----------
+     Rows are full-bleed list items with a hairline divider, label on the left and the
+     value/control pinned right. Section headers are small, uppercase and quiet. */
+  #settingsPanel .panel.settings { width: min(780px, 94vw); max-height: 82vh;
+    display: flex; flex-direction: column; }
+  /* Two columns: a section nav on the left, the active section on the right. */
+  .settings .s-main { display: grid; grid-template-columns: 172px minmax(0, 1fr);
+    min-height: 380px; flex: 1; }
+  .settings .s-nav { border-inline-end: 1px solid var(--line); padding: 8px;
+    overflow-y: auto; background: var(--surface-2); }
+  .settings .s-nav button { display: block; width: 100%; text-align: start;
+    padding: 8px 10px; margin-bottom: 2px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--dim); font: inherit; font-size: 13px;
+    cursor: pointer; }
+  .settings .s-nav button:hover { background: var(--surface); color: var(--text); }
+  .settings .s-nav button.on { background: var(--accent); color: #fff; font-weight: 500; }
+  /* Narrow screens: the nav becomes a horizontal strip above the content. */
+  @media (max-width: 680px) {
+    #settingsPanel .panel.settings { width: 96vw; max-height: 86vh; }
+    /* One column, and the nav row must size to its content — as a plain grid item it
+       stretched to fill the panel and each button became a tall block. */
+    .settings .s-main { grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr); align-content: start; }
+    .settings .s-nav { display: flex; align-items: center; gap: 6px;
+      border-inline-end: 0; border-bottom: 1px solid var(--line);
+      padding: 8px; overflow-x: auto; overflow-y: hidden; }
+    .settings .s-nav button { width: auto; flex: none; align-self: center;
+      white-space: nowrap; margin-bottom: 0; padding: 7px 12px; line-height: 1.2; }
+  }
+  .settings .s-head { display: flex; align-items: center; gap: 8px;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+    font-size: 15px; font-weight: 600; color: var(--text); }
+  .settings .s-close { margin-inline-start: auto; height: 26px; padding: 0 10px;
+    border-radius: 13px; border: 1px solid var(--line); background: var(--surface-2);
+    color: var(--dim); font-size: 12px; cursor: pointer; }
+  .settings .s-close:hover { color: var(--text); border-color: var(--line-strong); }
+  .settings .s-body { overflow-y: auto; padding: 4px 0 10px;
+    scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.18) transparent; }
+  .settings .s-body::-webkit-scrollbar { width: 8px; }
+  .settings .s-body::-webkit-scrollbar-thumb {
+    background: rgba(0,0,0,.16); border-radius: 8px;
+    border: 2px solid transparent; background-clip: content-box; }
+  .settings .s-sec { padding: 16px 16px 6px; font-size: 11.5px; font-weight: 600;
+    letter-spacing: .3px; color: var(--accent); text-transform: none; margin: 0;
+    background: transparent; }
+  .settings .s-row { display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px;
+    color: var(--text); background: transparent; }
+  .settings .s-row:last-child { border-bottom: 0; }
+  .settings .s-row:hover { background: var(--surface-2); }
+  .settings .s-label { flex: 1 1 auto; min-width: 0; display: block; }
+  .settings .s-desc { display: block; font-size: 11.5px; color: var(--faint);
+    margin-top: 2px; line-height: 1.35; }
+  .settings .s-row select, .settings .s-row input[type="text"] {
+    flex: none; height: 30px; padding: 0 8px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: 12.5px; outline: none; max-width: 170px; }
+  .settings .s-row select:focus, .settings .s-row input:focus {
+    border-color: var(--accent); background: var(--surface); }
+  /* Telegram-style switch for boolean rows. */
+  .settings .s-switch { flex: none; width: 42px; height: 26px; border-radius: 13px;
+    border: 0; padding: 0; cursor: pointer; position: relative;
+    background: var(--line-strong); transition: background-color .16s ease; }
+  .settings .s-switch::after { content: ''; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%; background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.28); transition: transform .16s ease; }
+  .settings .s-switch[aria-checked="true"] { background: var(--accent); }
+  .settings .s-switch[aria-checked="true"]::after { transform: translateX(16px); }
+  .settings .s-act { flex: none; height: 28px; padding: 0 12px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--dim);
+    font-size: 12px; cursor: pointer; }
+  .settings .s-act:hover { color: var(--text); border-color: var(--line-strong); }
+  .settings .s-act.danger:hover { color: var(--err);
+    border-color: color-mix(in srgb, var(--err) 40%, var(--line-strong)); }
+  .settings .s-val { flex: none; max-width: 200px; color: var(--dim); font-size: 12.5px;
+    font-family: var(--mono); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+
+  /* ---------- history search ---------- */
+  #searchPanel .panel { width: min(560px, 92vw); }
+  #searchPanel .results { max-height: 58vh; overflow-y: auto; padding: 6px;
+    scrollbar-width: thin; }
+  .sres { padding: 9px 11px; border-radius: 9px; cursor: pointer; }
+  .sres:hover { background: var(--surface-2); }
+  .sres .sbot { font-size: 11px; color: var(--faint); }
+  .sres .stext { font-size: 12.5px; color: var(--dim); margin-top: 3px; line-height: 1.45;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; }
+  .sres mark { background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: inherit; border-radius: 3px; padding: 0 1px; }
+  .sempty { padding: 22px 16px; text-align: center; color: var(--faint); font-size: 12.5px; }
+
+  .palette .list { max-height: 46vh; overflow: auto; padding: 6px; }
+  .palette .item { display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .palette .item.sel { background: var(--accent); color: #fff; }
+  .palette .item .sc { margin-left: auto; font: 10.5px/1 var(--mono); color: var(--faint); }
+  .palette .item.sel .sc { color: rgba(255,255,255,.85); }
+  .palette .foot { border-top: 1px solid var(--line); padding: 7px 13px; font-size: 10.5px;
+    color: var(--faint); display: flex; gap: 12px; }
+
+  @media (max-width: 900px) {
+    #app { grid-template-columns: 1fr; }
+    .rail, .pane { display: none; }
+    .msg, .card, .reasoning { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside class="rail">
+    <div class="rail-head">
+      <span class="brand">MyGrokbot</span>
+      <button class="icon-btn" id="newAgent" title="新建 bot">+</button>
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>
+      </svg>
+      <input id="search" placeholder="搜索 bot" />
+    </div>
+    <div id="agents"></div>
+    <div class="rail-foot">
+      <div class="rail-item" id="openPlugins">插件</div>
+      <div class="rail-item" id="openSettings">设置</div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="chat-head">
+      <button class="icon-btn" id="toggleRail" title="显示 bot 列表" style="display:none">☰</button>
+      <div class="avatar" id="headAvatar" style="width:28px;height:28px;border-radius:8px;font-size:10px"></div>
+      <div style="min-width:0">
+        <div class="title" id="title">—</div>
+        <div class="sub" id="subtitle"></div>
+      </div>
+      <div class="spacer"></div>
+      <span id="modelWrap">
+        <span class="pill btn" id="model" title="切换模型">—</span>
+        <div id="modelMenu">
+          <div class="mhead"><input id="modelFilter" placeholder="过滤模型…" /></div>
+          <div id="modelList"></div>
+        </div>
+      </span>
+      <span class="pill" id="conn">connecting…</span>
+      <button class="icon-btn" id="toggleInfo" title="显示/隐藏详情">◧</button>
+    </header>
+    <div id="log"></div>
+    <div class="composer">
+      <div class="status" id="status"></div>
+      <div class="chips" id="chips"></div>
+      <div class="box">
+        <button class="icon-btn" id="attach" title="添加附件">＋</button>
+        <input type="file" id="fileInput" multiple hidden />
+        <textarea id="input" rows="1" placeholder="给 bot 发消息…"></textarea>
+        <button id="stop" title="停止当前回合 (Esc)">停止</button>
+        <button class="primary" id="send">发送</button>
+      </div>
+    </div>
+  </main>
+
+  <aside class="pane">
+    <div class="pane-head" id="paneHead"></div>
+    <div class="pane-body" id="paneBody"></div>
+  </aside>
+</div>
+
+<div class="palette" id="settingsPanel">
+  <div class="panel settings">
+    <div class="s-head"><span>设置</span><button class="s-close" id="settingsClose">关闭</button></div>
+    <div class="s-main">
+      <nav class="s-nav" id="settingsNav"></nav>
+      <div class="s-body" id="settingsBody"></div>
+    </div>
+  </div>
+</div>
+
+<div class="palette" id="searchPanel">
+  <div class="panel">
+    <input id="searchInput" placeholder="搜索全部对话…" />
+    <div class="results" id="searchResults"></div>
+  </div>
+</div>
+
+<div class="palette" id="palette">
+  <div class="panel">
+    <input id="paletteInput" placeholder="输入命令…" />
+    <div class="list" id="paletteList"></div>
+    <div class="foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = new URLSearchParams(location.search).get('token') || window.__MGB_TOKEN__ || '';
+const $ = (id) => document.getElementById(id);
+
+let agents = [];
+let activeId = null;
+let entries = [];
+let binding = {};
+let uimap = null;
+let commands = [];
+let activeTab = 'overview';
+let searchQuery = '';
+let hostStatus = {};
+let routines = [];
+let reviewRules = {};
+let pendingIds = new Set();
+// DSH folds a finished turn's process only once the reader moves on: the newest turn
+// stays open, and sending anything collapses it. Keyed by turnId.
+let latestTurnId = null;
+const procOpenState = new Map();
+// turnId -> { total_tokens, elapsedMs }; filled from turn-end and reused in the footer.
+const turnUsage = new Map();
+// Turns the host has already closed. renderTurnProcess uses this so a late transcript
+// snapshot cannot re-open a finished turn's reasoning.
+const settledTurns = new Set();
+// nonce -> entryId, mirroring the host's ChangedMids: a node rendered optimistically
+// under the nonce is re-keyed in place once the row lands (tweb does the same).
+const changedMids = new Map();
+
+const COLORS = ['#7c5cff', '#2f9bff', '#19b57a', '#e8733f', '#e0457b', '#8b6b4a', '#f0a020', '#4aa8c0'];
+const colorFor = (id) => COLORS[[...String(id || '')].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+const initialOf = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
+const esc = (s) => String(s ?? '');
+
+async function rpc(method, args = {}) {
+  const res = await fetch(`/api/${method}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(TOKEN ? { authorization: `Bearer ${TOKEN}` } : {}) },
+    body: JSON.stringify(args),
+  });
+  const payload = await res.json();
+  if (!payload.ok) throw new Error(payload.error || `${method} failed`);
+  return payload.result;
+}
+
+/* ---------- time, Telegram style ---------- */
+const dayKey = (ms) => new Date(ms).toDateString();
+function fmtDay(ms) {
+  const d = new Date(ms), now = new Date();
+  const diff = Math.round((new Date(now.toDateString()) - new Date(d.toDateString())) / 86400000);
+  if (diff === 0) return '今天';
+  if (diff === 1) return '昨天';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function fmtTime(ms) {
+  return ms ? new Date(ms).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+}
+function fmtRelative(ms) {
+  if (!ms) return '';
+  const s = (Date.now() - ms) / 1000;
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return fmtTime(ms);
+  if (s < 604800) return new Date(ms).toLocaleDateString(undefined, { weekday: 'short' });
+  return new Date(ms).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+}
+
+/* ---------- grouping ----------
+   Window and radius values are taken from tweb (Telegram Web K, GPL-3.0):
+     bubbleGroups.ts  newGroupDiff = 121        // seconds, not minutes
+     _chatVariables.scss  $bubble-border-radius-big: 15px; ...-medium: 5px
+     _chatBubble.scss     &.no-brt / &.no-brb zero the inner corners
+   Adjacent bubbles stay separate when more than 121s apart. */
+const GROUP_WINDOW_MS = 121 * 1000;
+function senderKey(entry) {
+  // A user message is always its own bubble: consecutive sends are separate actions,
+  // and merging them made two independent prompts look like one edited message. The
+  // key still has to be non-null, because the renderer uses "key != null" to decide
+  // that a row is a message at all — returning null dropped every user row from the
+  // screen. So it is unique per entry, which also forces a group break.
+  if (entry.kind === 'message' && entry.role === 'user') {
+    return entry.fromAgent ? `bot:${entry.fromAgent.id}` : `me:${entry.id}`;
+  }
+  // A bot speaking on its own initiative (message_user) is not the reply of this turn:
+  // it groups by sender like any other incoming bot message.
+  if (entry.kind === 'message' && entry.role === 'assistant' && entry.fromAgent) {
+    return `bot:${entry.fromAgent.id}`;
+  }
+  if (entry.kind === 'send-message' && entry.message?.type === 'text') return 'bot';
+  return null;
+}
+function annotateGroups(list) {
+  const keyed = list.map((e) => ({ entry: e, key: senderKey(e) }));
+  return keyed.map((cur, i) => {
+    const prev = keyed[i - 1];
+    const next = keyed[i + 1];
+    const same = (a, b) =>
+      a && b && a.key != null && a.key === b.key &&
+      Math.abs((b.entry.timestampMs ?? 0) - (a.entry.timestampMs ?? 0)) < GROUP_WINDOW_MS &&
+      dayKey(a.entry.timestampMs ?? 0) === dayKey(b.entry.timestampMs ?? 0);
+    const joinPrev = same(prev, cur);
+    const joinNext = same(cur, next);
+    const pos = !joinPrev && !joinNext ? 'single' : !joinPrev ? 'start' : joinNext ? 'mid' : 'end';
+    return { ...cur, pos };
+  });
+}
+
+/* ---------- rendering ---------- */
+function renderRoster() {
+  const box = $('agents');
+  box.innerHTML = '';
+  const q = searchQuery.toLowerCase();
+  const list = agents.filter((a) => !q || `${a.name} ${a.description}`.toLowerCase().includes(q));
+  if (!list.length) {
+    box.innerHTML = `<div class="empty" style="padding:18px 10px">${agents.length ? '没有匹配的 bot' : '还没有 bot'}</div>`;
+    return;
+  }
+  for (const a of list) {
+    const el = document.createElement('div');
+    el.className = `agent${a.id === activeId ? ' active' : ''}`;
+    el.innerHTML = `
+      <span class="avatar" style="background:${colorFor(a.id)}${a.isGroup ? ';border-radius:50%' : ''}">${a.isGroup ? '☰' : initialOf(a.name)}</span>
+      <span class="meta">
+        <span class="row1"><span class="name"></span><span class="time"></span></span>
+        <span class="sub"></span>
+      </span>`;
+    el.querySelector('.name').textContent = a.name;
+    el.querySelector('.sub').textContent = a.description || a.id.slice(0, 8);
+    el.querySelector('.time').textContent = a.proxied ? 'remote' : fmtRelative(a.lastActivityMs);
+    el.onclick = () => selectAgent(a.id);
+    box.appendChild(el);
+  }
+}
+
+function describeEvent(entry) {
+  const ev = entry.event ?? {};
+  switch (ev.type) {
+    case 'name-changed': return `由「${ev.from}」改名为「${ev.to}」`;
+    case 'created': return '已创建';
+    default: return ev.type ?? 'event';
+  }
+}
+
+function nodeFor(entry) {
+  const t = entry.kind;
+  if (t === 'event') {
+    // "created" is roster noise; only renames and other state changes are worth a line.
+    if (entry.event?.type === 'created') return null;
+    const el = document.createElement('div');
+    el.className = 'service';
+    el.textContent = describeEvent(entry);
+    return el;
+  }
+  if (t === 'notice') {
+    const el = document.createElement('div');
+    el.className = entry.turnId ? 'tpnote' : 'service';
+    el.textContent = entry.text ?? '';
+    return el;
+  }
+  if (t === 'reasoning') {
+    const text0 = cleanText(entry.text ?? '');
+    if (!text0) return null; // an empty reasoning row is a bare bar with no meaning
+    const el = document.createElement('div');
+    el.className = 'reasoning';
+    el.dataset.entryId = entry.id;
+    if (entry.turnId) el.dataset.turnId = entry.turnId;
+    const text = cleanText(entry.text ?? '');
+    el.innerHTML = `<div class="rhead"><span class="rcaret">▶</span><span class="rlabel">思考过程</span><span class="rdot"></span><span class="rpeek"></span></div><div class="rbody"><div></div></div>`;
+    el.dataset.state = entry.running ? 'running' : 'ok';
+    // While the model is still thinking the block is open and follows the text; once the
+    // turn's answer starts, it folds — that is the transition the operator asked for.
+    if (entry.running) el.classList.add('open');
+    // DSH shows the first line of the latest completed paragraph while running, and the
+    // first line once settled; either way it is one ellipsised line.
+    el.querySelector('.rpeek').textContent = firstMeaningfulLine(text);
+    el.querySelector('.rbody > div').textContent = text;
+    el.querySelector('.rhead').onclick = () => {
+      el.classList.toggle('open');
+      // keep the newest content in view when a block expands just above the bottom
+      const log = $('log');
+      if (log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
+    };
+    return el;
+  }
+  if (t === 'tool-call') {
+    // Parked on a card, or blocked by one: the approval entry already says it.
+    if (entry.status === 'awaiting-approval' || entry.status === 'blocked') return null;
+    return renderStep(entry);
+  }
+  if (t === 'tool-result') {
+    const text = String(entry.result ?? '').trim();
+    if (!text) return null;
+    const el = document.createElement('div');
+    el.className = 'card tool';
+    el.innerHTML = `<div class="ct">结果</div><div class="cb"></div>`;
+    el.querySelector('.cb').textContent = String(entry.result ?? '').slice(0, 4000);
+    return el;
+  }
+  if (t === 'error') {
+    const el = document.createElement('div');
+    el.className = 'card error';
+    el.innerHTML = `<div class="ct">error</div><div class="cb"></div>`;
+    el.querySelector('.cb').textContent = entry.message ?? '';
+    return el;
+  }
+  if (t === 'send-message' && entry.message?.type === 'auto-review-approval') {
+    const el = document.createElement('div');
+    el.className = 'card approval';
+    el.dataset.entryId = entry.id;
+    const ap = entry.message.approval ?? {};
+    const resolved = entry.message.resolution;
+    el.innerHTML = `<div class="ct"><span class="dotwarn"></span>需要批准</div><div class="cb"></div><div class="cf"></div>`;
+    el.querySelector('.cb').textContent = ap.command ?? '';
+    const foot = el.querySelector('.cf');
+    if (resolved) {
+      const label = resolved === 'approved' ? '已批准' : resolved === 'denied' ? '已拒绝'
+        : resolved === 'always' ? '已批准，并记住这条命令' : resolved === 'expired' ? '已过期' : resolved;
+      const denied = resolved === 'denied' || resolved === 'expired';
+      el.classList.add('card-done');
+      // Collapsed: a single quiet line with the verdict; the command expands on click.
+      el.innerHTML = `<div class="donehead">
+          <span class="doticon"></span>
+          <span class="donetext"></span>
+          <span class="donecmd"></span>
+          <span class="donecaret">▶</span>
+        </div>
+        <div class="donebody"><pre></pre></div>`;
+      el.querySelector('.doticon').textContent = denied ? '✕' : '✓';
+      el.querySelector('.donetext').textContent = label;
+      el.querySelector('.donecmd').textContent = (ap.command ?? '').replace(/\s+/g, ' ').slice(0, 80);
+      el.querySelector('.donebody pre').textContent = ap.command ?? '';
+      if (denied) el.style.setProperty('--done-color', 'var(--err)');
+      el.querySelector('.donehead').onclick = () => el.classList.toggle('open');
+      return el;
+    } else {
+      foot.innerHTML = `<button data-a="denied">拒绝</button>
+        <button data-a="always">总是允许</button>
+        <button data-a="approved">批准</button>`;
+      foot.onclick = (e) => {
+        const btn = e.target.closest('button');
+        if (btn) resolveApproval(entry.id, btn.dataset.a);
+      };
+    }
+    return el;
+  }
+  if (t === 'send-message' && entry.message?.type === 'question') {
+    const el = document.createElement('div');
+    el.className = 'card question';
+    el.dataset.entryId = entry.id;
+    el.innerHTML = `<div class="ct">需要你决定</div><div class="cb"></div><div class="cf"></div>`;
+    el.querySelector('.cb').textContent = entry.message.prompt ?? '';
+    const foot = el.querySelector('.cf');
+    if (entry.message.answered) {
+      foot.innerHTML = `<span class="resolved"></span>`;
+      foot.firstElementChild.textContent = `已回答：${entry.message.answer}`;
+    } else {
+      for (const opt of entry.message.options ?? []) {
+        const b = document.createElement('button');
+        b.className = 'primary';
+        b.textContent = opt;
+        b.onclick = () => answerWidget(entry.id, opt);
+        foot.appendChild(b);
+      }
+    }
+    return el;
+  }
+  return null;
+}
+
+// A model can echo its own reasoning marker into the visible text. Strip the marker
+// (keep the prose) so the stream never shows "</think:...>" to the operator.
+function cleanText(text) {
+  return String(text ?? '')
+    .replace(/<\/?think:[0-9a-f-]+>/gi, '')
+    .replace(/<\/?think>/gi, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// A message can contain markdown-ish separators the model writes ("---"). Rendering
+// them as literal dashes looked like a stray border; turn them into a real rule.
+function renderRichText(target, raw) {
+  const text = cleanText(raw);
+  // Only a line that is exactly a rule marks a section break; a `---` inside a YAML
+  // front-matter block (tool output) must stay verbatim.
+  if (!/^\s*-{3,}\s*$/m.test(text)) {
+    target.textContent = text;
+    return;
+  }
+  const parts = text.split(/^\s*-{3,}\s*$/m);
+  target.textContent = '';
+  parts.forEach((part, i) => {
+    if (i > 0) {
+      const hr = document.createElement('span');
+      hr.className = 'md-rule';
+      target.appendChild(hr);
+    }
+    const chunk = part.replace(/^\n+|\n+$/g, '');
+    if (chunk) target.appendChild(document.createTextNode(chunk));
+  });
+}
+
+// DSH: latestCompletedParagraphFirstLine / firstLine, then strip markdown emphasis.
+function firstMeaningfulLine(text) {
+  const lines = String(text ?? '')
+    .replace(/\*\*/g, '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  return lines.length ? lines[lines.length > 1 ? lines.length - 1 : 0] : '';
+}
+
+// One row per id. The server is authoritative; merging keeps first-seen order.
+function dedupe(rows) {
+  const seen = new Map();
+  for (const r of rows) {
+    if (!r?.id) { seen.set(Symbol('anon'), r); continue; }
+    seen.set(r.id, { ...(seen.get(r.id) ?? {}), ...r });
+  }
+  return [...seen.values()];
+}
+
+// Build the display units: a turn's process (reasoning + tool steps) is folded under
+// one header, and the answer stands on its own. Rows without a turnId (older data,
+// events) stay in plain flow.
+function buildUnits(rows) {
+  // Group by turn, not by adjacency. A turn interleaves reasoning and tool rows and may
+  // emit an intermediate "I'll do X" answer between them; adjacency-based grouping split
+  // that into several blocks and made the stream look out of order.
+  const out = [];
+  const turnUnit = new Map(); // turnId -> process unit, so all steps land in one block
+  let turnStart = null;
+  let currentTurnKey = null;
+  let lastUnit = null;
+
+  for (const entry of rows) {
+    const t = entry.kind;
+    const isProcess = t === 'reasoning' || t === 'tool-call' || t === 'tool-result';
+
+    if (isProcess) {
+      // A notice with no turnId is attributed to the turn whose steps just ran.
+      const turnId = entry.turnId
+        ?? (t === 'notice' ? lastProcessTurn : null)
+        ?? currentTurnKey
+        ?? 'no-turn';
+      if (t !== 'notice') lastProcessTurn = turnId;
+      let unit = turnUnit.get(turnId);
+      if (!unit) {
+        unit = {
+          type: 'process',
+          turnId,
+          rows: [],
+          startedAt: turnStart ?? entry.timestampMs ?? Date.now(),
+          endedAt: entry.timestampMs ?? Date.now(),
+        };
+        turnUnit.set(turnId, unit);
+        // insert at the position of this turn's first step
+        out.push(unit);
+      }
+      unit.rows.push(entry);
+      unit.endedAt = Math.max(unit.endedAt, entry.timestampMs ?? 0);
+      lastUnit = unit;
+      continue;
+    }
+
+    if (t === 'message' && entry.role === 'user') {
+      turnStart = entry.timestampMs ?? null;
+      currentTurnKey = `legacy-${entry.id}`;
+    }
+    const u = { type: 'entry', entry };
+    out.push(u);
+    lastUnit = u;
+  }
+
+  // A turn's duration runs from its user message to its final answer.
+  for (const u of out) {
+    if (u.type !== 'process') continue;
+    const idx = out.indexOf(u);
+    for (let j = idx + 1; j < out.length; j++) {
+      const e = out[j].entry;
+      if (!e) {
+        // another turn begins: stop looking
+        if (out[j].type === 'process') break;
+        continue;
+      }
+      if (e.kind === 'message' && e.role === 'user') break;
+      if (e.kind === 'send-message' && e.message?.type === 'text') {
+        u.endedAt = Math.max(u.endedAt, e.timestampMs ?? 0);
+      }
+    }
+  }
+  return out;
+}
+
+// Follow the stream only when the reader is already at the bottom.
+function autoScroll() {
+  const log = $('log');
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
+}
+
+function renderStream() {
+  if (window.__MGB_DEBUG) {
+    window.__dbg = { entriesLen: entries.length,
+      kinds: [...new Set(entries.map(e => e.kind))],
+      sample: entries.filter(e => e.kind === 'reasoning').slice(0,2).map(e => ({ id: e.id, len: (e.text||'').length, turn: e.turnId })) };
+  }
+  const log = $('log');
+  // The newest turn is the one whose process block appears last.
+  const procUnits = buildUnits(entries).filter((u) => u.type === 'process' && u.turnId !== 'no-turn');
+  latestTurnId = procUnits.length ? procUnits[procUnits.length - 1].turnId : null;
+  // Keep the operator where they were: a full rebuild on every event would otherwise
+  // jump the stream to the bottom (or to the top when empty) mid-conversation.
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
+  const prevTop = log.scrollTop;
+  log.innerHTML = '';
+  if (!entries.length) {
+    log.innerHTML = '<div class="empty" style="margin:auto;text-align:center">还没有对话。发一条消息试试。</div>';
+    return;
+  }
+  let lastDay = null;
+  const units = buildUnits(entries);
+  // A process unit is rendered by its own path; the grouping pass only handles messages.
+  const messageRows = units.filter((u) => u.type === 'entry').map((u) => u.entry);
+  const grouped = new Map(annotateGroups(messageRows).map((g) => [g.entry.id, g]));
+  for (const unit of units) {
+    if (unit.type === 'process') {
+      log.appendChild(renderTurnProcess(unit));
+      continue;
+    }
+    const { entry, key, pos } = grouped.get(unit.entry.id) ?? { entry: unit.entry, key: null, pos: 'single' };
+    const day = dayKey(entry.timestampMs ?? Date.now());
+    if (day !== lastDay) {
+      const d = document.createElement('div');
+      d.className = 'day';
+      d.textContent = fmtDay(entry.timestampMs ?? Date.now());
+      log.appendChild(d);
+      lastDay = day;
+    }
+    // An assistant row with no text (the model went straight to a tool call) is not a
+    // message: rendering it produced an empty bubble above the tool card.
+    const isText = entry.kind === 'send-message'
+      ? (entry.message?.type === 'text' && String(entry.message?.content ?? '').trim().length > 0)
+      : (entry.kind === 'message' && entry.message?.type === 'text'
+         && (entry.role === 'user' || entry.role === 'assistant'));
+    if (isText && key != null) {
+      const mine = key === 'me' || key.startsWith('me:');
+      const name = entry.fromAgent?.name ?? (mine ? 'You' : (agentName() || 'bot'));
+      const isPending = pendingIds.has(entry.id);
+      // A bot writing to the operator on its own initiative gets a quiet marker so it
+      // is not mistaken for the answer to the message above it.
+      const proactive = entry.proactive === true;
+      const el = document.createElement('div');
+      el.className = `msg ${mine ? 'mine' : ''} group-${pos}`
+        + `${isPending ? ' pending' : ''}${proactive ? ' proactive' : ''}`;
+      el.dataset.entryId = entry.id;
+      el.innerHTML = `${mine ? '' : `<span class="avatar" style="background:${colorFor(entry.fromAgent?.id ?? activeId)}"></span>`}
+        <span class="stack">
+          ${proactive ? '<span class="pmark">主动通知</span>' : ''}
+          <span class="bubble${pos === 'end' || pos === 'single' ? ' has-time' : ''}"><span class="btext"></span>${
+            pos === 'end' || pos === 'single'
+              ? `<span class="stamp">${footerMeta(entry)}</span>`
+              : ''
+          }</span>
+        </span>`;
+      if (!mine) el.querySelector('.avatar').textContent = initialOf(name);
+      // Reserve exactly the stamp's width (measured after layout) so the last text line
+      // never slides under "04:13 · 3076 tok · 4 tok/s".
+      const stampEl = el.querySelector('.stamp');
+      if (stampEl) {
+        const apply = () => {
+          const w = stampEl.getBoundingClientRect().width;
+          if (w > 0) el.querySelector('.bubble').style.setProperty('--slot-w', `${Math.ceil(w) + 16}px`);
+        };
+        // After this node is in the document and laid out.
+        setTimeout(apply, 0);
+        new ResizeObserver(apply).observe(stampEl);
+      }
+      // No name label: left/right + the avatar already identify the speaker.
+      el.title = name;
+      // Alt+click (or long-press) quotes this message into the composer.
+      el.addEventListener('click', (ev) => {
+        if (!ev.altKey) return;
+        ev.preventDefault();
+        setReplyTo(entry);
+      });
+      renderRichText(el.querySelector('.btext'), entry.message?.content);
+      if (entry.replyTo) {
+        const quoted = entries.find((x) => x.id === entry.replyTo);
+        if (quoted) {
+          const q = document.createElement('span');
+          q.className = 'quote';
+          const who = quoted.role === 'user'
+            ? (quoted.fromAgent?.name ?? '我') : (quoted.fromAgent?.name ?? agentName() ?? 'bot');
+          q.innerHTML = `<span class="qwho"></span><span class="qtext"></span>`;
+          q.querySelector('.qwho').textContent = who;
+          q.querySelector('.qtext').textContent =
+            String(quoted.message?.content ?? '').replace(/\s+/g, ' ').slice(0, 90);
+          el.querySelector('.bubble').insertBefore(q, el.querySelector('.bubble').firstChild);
+        }
+      }
+      const files = Array.isArray(entry.attachments) ? entry.attachments : [];
+      if (files.length) {
+        const wrap = document.createElement('span');
+        wrap.className = 'abox';
+        for (const f of files) {
+          const name = String(f).split('/').pop();
+          const ext = name.split('.').pop().toLowerCase();
+          // Images render inline; anything else stays a chip.
+          if (['png','jpg','jpeg','gif','webp','svg','bmp'].includes(ext)) {
+            const img = document.createElement('img');
+            img.className = 'aimg';
+            const clean = String(f).replace(/^workspace\//, '');
+            img.src = `/files/${encodeURIComponent(clean)}`;
+            img.alt = name;
+            img.title = name;
+            img.onclick = () => window.open(img.src, '_blank');
+            wrap.appendChild(img);
+          } else {
+            const c = document.createElement('span');
+            c.className = 'afile';
+            c.textContent = name;
+            c.title = f;
+            wrap.appendChild(c);
+          }
+        }
+        el.querySelector('.bubble').insertBefore(wrap, el.querySelector('.stamp'));
+      }
+      log.appendChild(el);
+      continue;
+    }
+    let node = nodeFor(entry);
+    if (node) {
+      // Cards live inside the same column as bubbles.
+      if (node.classList.contains('card')) {
+        const wrap = document.createElement('div');
+        wrap.className = 'cardwrap';
+        wrap.appendChild(node);
+        node = wrap;
+      }
+      log.appendChild(node);
+    }
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+// The transcript window deliberately omits tool-call rows (same partial index the
+// real host uses), so tool activity is merged back in from the outline.
+function mergeOutline(rows, outline) {
+  if (!outline.length) return rows;
+  const out = rows.slice();
+  for (const c of outline) {
+    if (out.some((e) => e.kind === 'tool-call' && e.id === c.id)) continue;
+    out.push({
+      kind: 'tool-call', id: c.id, name: c.name, status: c.status, summary: c.summary,
+      args: c.args ?? {}, turnId: c.turnId ?? null, timestampMs: c.timestampMs,
+    });
+    if (c.hasResult) {
+      out.push({ kind: 'tool-result', id: `${c.id}-result`, callId: c.id, name: c.name, result: c.result, isError: c.isError, timestampMs: c.timestampMs + 1 });
+    }
+  }
+  return out.sort((a, b) => (a.timestampMs ?? 0) - (b.timestampMs ?? 0));
+}
+
+// DSH step row: "✓ 已读取文件  shared/x.md  0.3s", expanding to the payload.
+// One line per call keeps a burst of tool use scannable.
+const STEP_VERBS = {
+  shell: ['准备运行命令', '执行了命令'],
+  read_file: ['准备读取文件', '已读取文件'],
+  write_file: ['准备写入文件', '已写入文件'],
+  list_dir: ['准备查看目录', '已查看目录'],
+  recall_memory: ['准备读取记忆', '已读取记忆'],
+  update_memory: ['准备写入记忆', '已写入记忆'],
+  read_skill: ['准备读取技能', '已读取技能'],
+  message_agent: ['准备通知 bot', '已通知 bot'],
+  message_user: ['准备通知你', '已通知你'],
+  ask_user: ['准备提问', '已向你提问'],
+};
+
+function stepVerb(name, done) {
+  const pair = STEP_VERBS[name];
+  if (pair) return done ? pair[1] : pair[0];
+  return done ? `已调用 ${name}` : `准备调用 ${name}`;
+}
+
+function stepArgPreview(entry) {
+  const args = entry.args ?? {};
+  // Pick the argument a human would name the step by — a path, a command, a recipient.
+  const v = args.path ?? args.command ?? args.to ?? args.name ?? args.slug
+    ?? args.prompt ?? args.text;
+  if (typeof v === 'string' && v.trim()) {
+    const one = v.trim().replace(/\s+/g, ' ');
+    return one.length > 72 ? `${one.slice(0, 72)}…` : one;
+  }
+  const keys = Object.keys(args);
+  return keys.length ? `{${keys.join(', ')}}` : '';
+}
+
+function renderStep(entry, result) {
+  const el = document.createElement('div');
+  el.className = 'step';
+  el.dataset.entryId = entry.id;
+  el.dataset.callId = entry.callId ?? entry.id;
+
+  const hasResult = Boolean(result);
+  const running = entry.status === 'running' && !hasResult;
+  const failed = entry.status === 'error' || result?.isError === true;
+  el.dataset.state = failed ? 'error' : running ? 'running' : 'ok';
+
+  // DSH's iconography: a small glyph, never a word.
+  const icon = failed ? '✕' : running ? '◌' : '✓';
+  const preview = stepArgPreview(entry);
+
+  el.innerHTML = `<div class="s-head">
+      <span class="s-caret">▶</span>
+      <span class="s-ico"></span>
+      <span class="s-title"></span>
+      <span class="s-sep">·</span>
+      <span class="s-arg"></span>
+    </div>
+    <div class="s-body"><div></div></div>`;
+  el.querySelector('.s-ico').textContent = icon;
+  el.querySelector('.s-title').textContent = stepVerb(entry.name, !running);
+  el.querySelector('.s-arg').textContent = preview;
+  // The separator is only meaningful when there is something after it.
+  if (!preview) el.querySelector('.s-sep').style.display = 'none';
+
+  // Body: one code block. Arguments first, the result below it — never expanded by
+  // default, because the preview above already says what happened.
+  const body = el.querySelector('.s-body > div');
+  const blocks = [];
+  const args = JSON.stringify(entry.args ?? {}, null, 2);
+  if (args && args !== '{}') blocks.push({ label: preview || entry.name, text: args });
+  if (hasResult) blocks.push({ label: 'result', text: String(result.result ?? '').slice(0, 8000), error: result.isError === true });
+  if (!blocks.length) blocks.push({ label: entry.name, text: '(no payload)' });
+
+  for (const b of blocks) {
+    const box = document.createElement('div');
+    box.className = 's-code';
+    box.innerHTML = `<div class="s-codebar"><span class="s-dot"></span><span class="s-codelabel"></span><button class="s-copy" type="button">复制</button></div><pre class="s-pre"></pre>`;
+    if (b.error) box.querySelector('.s-dot').style.background = 'var(--err)';
+    box.querySelector('.s-codelabel').textContent = b.label;
+    box.querySelector('.s-pre').textContent = b.text;
+    box.querySelector('.s-copy').onclick = (ev) => {
+      ev.stopPropagation();
+      navigator.clipboard?.writeText(b.text);
+      ev.target.textContent = '已复制';
+      setTimeout(() => { ev.target.textContent = '复制'; }, 1200);
+    };
+    body.appendChild(box);
+  }
+
+  el.querySelector('.s-head').onclick = () => el.classList.toggle('open');
+  return el;
+}
+// One turn's folded process: header says what happened, body holds the steps.
+// The process block is just the reasoning (and any tool steps) — no extra
+// "已完成" row wrapped around it. Duration and tokens belong to the answer footer,
+// where Telegram puts them.
+function renderTurnProcess(unit) {
+  const frag = document.createDocumentFragment();
+
+  const resultsByCall = new Map();
+  for (const row of unit.rows) {
+    if (row.kind === 'tool-result') {
+      const key = row.callId ?? row.id;
+      if (key) resultsByCall.set(key, row);
+    }
+  }
+
+  const answered = settledTurns.has(unit.turnId) || entries.some(
+    (e) => e.turnId === unit.turnId && e.kind === 'send-message' && e.message?.type === 'text'
+      && String(e.message.content ?? '').trim(),
+  );
+
+  // ONE process disclosure per turn. Reasoning, tool calls and peer notices are all
+  // children of it, in the order they happened — a tool call is a step *inside* the
+  // thinking, not a sibling row beside it.
+  const steps = unit.rows.filter((r) => r.kind !== 'tool-result');
+  if (!steps.length) return frag;
+
+  const reasoningRows = steps.filter((r) => r.kind === 'reasoning');
+  const previewText = reasoningRows.map((r) => cleanText(r.text ?? '')).filter(Boolean).join('\n\n');
+  const running = !answered;
+
+  const el = document.createElement('div');
+  el.className = 'reasoning';
+  el.dataset.turnId = unit.turnId;
+  el.dataset.state = running ? 'running' : 'ok';
+  el.innerHTML = `<div class="rhead"><span class="rcaret">▶</span><span class="rlabel">思考过程</span><span class="rdot"></span><span class="rpeek"></span></div><div class="rbody"><div class="rstream"></div></div>`;
+  // Collapsed: show the elapsed time only. A truncated preview of the thought was more
+  // distracting than useful, and the step count already hints at what happened.
+  const first = unit.rows.find((r) => r.timestampMs);
+  const last = [...unit.rows].reverse().find((r) => r.timestampMs);
+  const thoughtMs = first && last && last.timestampMs > first.timestampMs
+    ? last.timestampMs - first.timestampMs : 0;
+  const toolCount = steps.filter((r) => r.kind === 'tool-call').length;
+  const bits = [];
+  if (thoughtMs >= 1000) bits.push(`用时 ${fmtDuration(thoughtMs)}`);
+  if (toolCount) bits.push(`${toolCount} 步`);
+  el.querySelector('.rpeek').textContent = bits.length ? bits.join(' · ')
+    : (running ? '进行中' : '已完成');
+  if (running) el.classList.add('open');
+
+  const stream = el.querySelector('.rstream');
+
+  // Emit in real order: a text segment, then the steps that followed it.
+  let pending = [];
+  const flushText = () => {
+    const text = pending.map((r) => cleanText(r.text ?? '')).filter(Boolean).join('\n\n');
+    pending = [];
+    if (!text) return;
+    const seg = document.createElement('div');
+    seg.className = 'rseg';
+    seg.textContent = text;
+    stream.appendChild(seg);
+  };
+
+  for (const row of steps) {
+    if (row.kind === 'reasoning') { pending.push(row); continue; }
+    flushText();
+    if (row.kind === 'tool-call') {
+      const res = resultsByCall.get(row.callId ?? row.id);
+      const merged = res
+        ? { ...row, status: row.status === 'error' || res.isError ? 'error' : 'ok',
+            durationMs: res.timestampMs && row.timestampMs ? res.timestampMs - row.timestampMs : null }
+        : row;
+      stream.appendChild(renderStep(merged, res));
+      continue;
+    }
+    const node = nodeFor(row);
+    if (node) stream.appendChild(node);
+  }
+  flushText();
+
+  el.querySelector('.rhead').onclick = () => el.classList.toggle('open');
+  frag.appendChild(el);
+  return frag;
+}
+
+// What goes in the answer's bottom-right corner: time, and the turn's token spend.
+// Telegram keeps this inside the bubble; the token count is the one extra fact worth
+// carrying there because it answers "what did this cost me".
+function footerMeta(entry) {
+  const parts = [fmtTime(entry.timestampMs)];
+  const u = turnUsage.get(entry.turnId);
+  if (u?.total_tokens) parts.push(`${u.total_tokens} tok`);
+  // Average output rate for the turn, kept after it finishes.
+  const out = u?.completion_tokens;
+  if (out && u?.measuredMs) {
+    const rate = Math.round(out / (u.measuredMs / 1000));
+    if (rate > 0) parts.push(`${rate} tok/s`);
+  } else if (u?.charsPerSec) {
+    parts.push(`${u.charsPerSec} 字/秒`);
+  }
+  return parts.join(' · ');
+}
+
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}秒`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r ? `${m}分${r}秒` : `${m}分`;
+}
+
+function agentName() {
+  return agents.find((a) => a.id === activeId)?.name ?? 'bot';
+}
+
+/* ---------- pane ---------- */
+// The real UI map has six tabs. Six does not fit a 300px pane without wrapping or
+// scrolling, so they are merged into three that keep every section reachable:
+//   overview  <- details
+//   routines  <- tasks + library (产出)
+//   computer  <- computer + proxy + workspace + meetings + members
+const TAB_FALLBACK = ['overview', 'routines', 'computer'];
+const TAB_LABELS = { overview: '详情', routines: '任务', computer: '主机' };
+const TAB_MERGES = {
+  overview: ['overview'],
+  routines: ['routines', 'media'],
+  computer: ['computer', 'meetings', 'members'],
+};
+
+function renderPane() {
+  const tabs = TAB_FALLBACK;
+  const labels = TAB_LABELS;
+  const head = $('paneHead');
+  head.innerHTML = '';
+  for (const id of tabs) {
+    const b = document.createElement('div');
+    b.className = `tab${id === activeTab ? ' active' : ''}`;
+    b.textContent = labels[id] ?? id;
+    b.onclick = () => { activeTab = id; renderPane(); };
+    head.appendChild(b);
+  }
+
+  const body = $('paneBody');
+  body.innerHTML = '';
+  const agent = agents.find((a) => a.id === activeId);
+  const add = (html) => {
+    const holder = document.createElement('div');
+    holder.innerHTML = html;
+    while (holder.firstChild) body.appendChild(holder.firstChild);
+  };
+
+  if (activeTab === 'overview') {
+    add(`<div class="sec">Bot</div>
+      <div class="kv">
+        <span class="k">名称</span><span data-f="name"></span>
+        <span class="k">模型</span><span data-f="model"></span>
+        <span class="k">接入点</span><span data-f="route"></span>
+        <span class="k">执行位置</span><span data-f="harness"></span>
+        <span class="k">编号</span><span data-f="id" style="word-break:break-all"></span>
+      </div>`);
+    body.querySelectorAll('[data-f]').forEach((el) => {
+      const f = el.dataset.f;
+      el.textContent = f === 'name' ? esc(agent?.name)
+        : f === 'model' ? esc(binding.modelId ?? '—')
+        : f === 'route' ? esc(binding.baseUrl ?? '—')
+        : f === 'harness' ? (agent?.harness === 'temporal' ? '服务端' : '本机')
+        : esc(String(agent?.id ?? '').slice(0, 8));
+    });
+    add(`<div class="sec">职责</div><div class="entry"><div class="m" data-desc></div></div>`);
+    body.querySelector('[data-desc]').textContent = agent?.description || '—';
+    add(`<div class="sec">记忆</div><div class="entry"><div class="m" data-mem>读取中…</div></div>`);
+    rpc('readMemory', { agentId: activeId })
+      .then((r) => { const el = body.querySelector('[data-mem]'); if (el) el.textContent = (r.memory || '（空）').slice(0, 1200); })
+      .catch(() => {});
+  }
+
+  if (activeTab === 'routines') {
+    add(`<div class="sec"><span>定时任务 · ${routines.length}</span><button class="mini" id="newRoutine">+ 新建</button></div>`);
+    body.querySelector('#newRoutine').onclick = () => editRoutine(null);
+    if (!routines.length) add('<div class="empty">还没有任务。点右上「+ 新建」或 <code>mgb routine add</code>。</div>');
+    for (const r of routines) {
+      const trig = r.trigger?.type === 'group'
+        ? r.trigger.listeners.map((x) => x.type).join(' + ')
+        : (r.trigger?.type ?? 'cron');
+      add(`<div class="entry"><div class="t"><span data-n></span><span class="go">立即运行</span><span class="edit">编辑</span><span class="del">删除</span></div>
+        <div class="m" data-t></div>${r.runs?.[0] ? '<div class="m" data-l></div>' : ''}</div>`);
+      const card = body.lastElementChild;
+      card.querySelector('[data-n]').textContent = r.name;
+      card.querySelector('[data-t]').textContent = `${trig}${r.schedule ? ' · ' + r.schedule : ''}`;
+      if (r.runs?.[0]) {
+        const st = r.runs[0].status;
+        card.querySelector('[data-l]').textContent =
+          `上次：${st === 'ok' ? '成功' : st === 'error' ? '失败' : st === 'running' ? '运行中' : st}`;
+      }
+      card.querySelector('.go').onclick = () => {
+        rpc('runAgentAutomationNow', { agentId: activeId, slug: r.slug })
+          .then(() => { $('status').textContent = `已运行 ${r.slug}`; refreshPaneData(); });
+      };
+      const editBtn = card.querySelector('.edit');
+      if (editBtn) editBtn.onclick = (e) => { e.stopPropagation(); editRoutine(r); };
+      const delBtn = card.querySelector('.del');
+      if (delBtn) delBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!confirm(`删除任务「${r.name}」？`)) return;
+        rpc('deleteAgentAutomation', { agentId: activeId, slug: r.slug })
+          .then(() => { $('status').textContent = '已删除'; refreshPaneData(); })
+          .catch((err) => { $('status').textContent = err.message; });
+      };
+    }
+
+    // Library was its own tab; it has no data source yet, so it is one line here.
+    add(`<div class="sec">产出</div><div class="entry"><div class="m">素材库还没有数据源。</div></div>`);
+  }
+
+  if (activeTab === 'computer') {
+    add(`<div class="sec">审核</div>
+      <div class="kv">
+        <span class="k">shell</span><span data-c></span>
+        <span class="k">常驻放行</span><span data-s></span>
+        <span class="k">开关</span><span data-e></span>
+      </div>`);
+    const ceiling = reviewRules.ceilings?.shell ?? 'ASK';
+    const ceilingEl = body.querySelector('[data-c]');
+    ceilingEl.textContent =
+      ceiling === 'NEVER' ? '从不（NEVER）' : ceiling === 'ALWAYS' ? '总是（ALWAYS）' : '每次询问（ASK）';
+    ceilingEl.style.cursor = 'pointer';
+    ceilingEl.title = '点击切换 shell 审批策略';
+    ceilingEl.onclick = async () => {
+      const next = ceiling === 'NEVER' ? 'ASK' : ceiling === 'ASK' ? 'ALWAYS' : 'NEVER';
+      try {
+        await rpc('setAutoReviewRules', { patch: { ceilings: { shell: next } } });
+        reviewRules = await rpc('getAutoReviewRules');
+        $('status').textContent = `shell 策略 → ${next}`;
+        renderPane();
+      } catch (err) { $('status').textContent = err.message; }
+    };
+    const allowEl = body.querySelector('[data-s]');
+    allowEl.textContent = `${(reviewRules.alwaysAllow ?? []).length} 条`;
+    allowEl.style.cursor = 'pointer';
+    allowEl.title = '点击查看并清空';
+    allowEl.onclick = async () => {
+      const list = reviewRules.alwaysAllow ?? [];
+      if (!list.length) { $('status').textContent = '没有常驻放行的命令'; return; }
+      const ok = confirm(`常驻放行 ${list.length} 条命令：\n\n${list.slice(0, 12).join('\n')}\n\n清空？`);
+      if (!ok) return;
+      await rpc('setAutoReviewRules', { patch: { alwaysAllow: [] } });
+      reviewRules = await rpc('getAutoReviewRules');
+      renderPane();
+    };
+    body.querySelector('[data-e]').textContent = reviewRules.isEnabled === false ? '已关闭' : '已开启';
+
+    const ports = hostStatus.ports ?? {};
+    add(`<div class="sec">主机</div>
+      <div class="kv">
+        <span class="k">网关端口</span><span data-g></span>
+        <span class="k">bot 数</span><span data-a></span>
+        <span class="k">运行中</span><span data-t2></span>
+        <span class="k">在线</span><span data-cl></span>
+      </div>`);
+    body.querySelector('[data-g]').textContent = esc(ports.hostGateway ?? '—');
+    body.querySelector('[data-a]').textContent = esc(hostStatus.agentCount ?? '—');
+    body.querySelector('[data-t2]').textContent = esc(hostStatus.runningTurns ?? 0);
+    body.querySelector('[data-cl]').textContent = esc(hostStatus.streamingClients ?? 0);
+
+    add(`<div class="sec">技能 <button class="mini" id="showSkills" style="float:right">查看</button></div>
+      <div class="entry"><div class="m" data-skills>点击「查看」列出已安装技能</div></div>`);
+    body.querySelector('#showSkills').onclick = async () => {
+      const r = await rpc('skillsCatalog', { agentId: activeId }).catch(() => ({ skills: [] }));
+      const list = r.skills ?? r ?? [];
+      const el = body.querySelector('[data-skills]');
+      if (el) el.textContent = list.length ? list.map((s) => s.slug ?? s.name).join('、') : '（空）';
+    };
+
+    add(`<div class="sec">工具策略</div><div class="entry"><div class="m" data-policy>读取中…</div></div>`);
+    rpc('getToolPolicy', { agentId: activeId }).then((pol) => {
+      const el = body.querySelector('[data-policy]');
+      if (!el) return;
+      const disabled = pol?.disabled ?? pol?.blocked ?? [];
+      el.textContent = Array.isArray(disabled) && disabled.length
+        ? `已禁用：${disabled.join('、')}`
+        : '全部工具可用';
+    }).catch(() => {});
+
+    add(`<div class="sec">工作区</div>
+      <div class="entry"><div class="m">所有 bot 共用同一个目录，它不是安全边界。</div></div>`);
+
+    // Members (only meaningful for a room)
+    if (agent?.isGroup) {
+      const members = agent.memberIds ?? [];
+      add(`<div class="sec">成员 · ${members.length}</div>`);
+      for (const mid of members) {
+        const m = agents.find((x) => x.id === mid);
+        add(`<div class="entry" style="cursor:pointer"><div class="t" data-mn></div><div class="m" data-md></div></div>`);
+        const card = body.lastElementChild;
+        card.querySelector('[data-mn]').textContent = m?.name ?? mid.slice(0, 8);
+        card.querySelector('[data-md]').textContent = m?.description || mid;
+        card.onclick = () => { if (m) selectAgent(m.id); };
+      }
+      add(`<div class="entry" style="display:flex;gap:8px;align-items:center">
+        <button id="runRound">跑一轮</button>
+        <button id="cancelRound" class="no">取消</button>
+      </div>`);
+      body.querySelector('#runRound').onclick = runRoomRound;
+      body.querySelector('#cancelRound').onclick = () => {
+        rpc('cancelRoomTurn', { roomId: activeId }).then(() => { $('status').textContent = '已取消'; });
+      };
+    }
+
+    add(`<div class="sec">会议</div><div class="entry"><div class="m">还没有数据源。</div></div>`);
+  }
+
+}
+
+/* ---------- actions ---------- */
+async function selectAgent(id) {
+  activeId = id;
+  renderRoster();
+  const a = agents.find((x) => x.id === id);
+  $('title').textContent = a?.name ?? '—';
+  $('subtitle').textContent = a?.description || '';
+  const av = $('headAvatar');
+  av.style.background = colorFor(id);
+  av.textContent = initialOf(a?.name);
+
+  binding = await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
+  $('model').textContent = binding.modelId ?? '—';
+  modelCatalog = null; // the base URL may differ per agent
+  const route = await rpc('getAgentRoute', { agentId: id }).catch(() => null);
+  $('subtitle').textContent = `${a?.description || ''}${route?.proxied ? ' · runs on the server' : ''}`;
+
+  const [rows, outline, pending] = await Promise.all([
+    rpc('getAgentTranscript', { agentId: id, limit: 300 }),
+    rpc('getAgentOutline', { agentId: id }).catch(() => []),
+    rpc('getPendingEntryIds', { agentId: id }).catch(() => []),
+  ]);
+  pendingIds = new Set(pending ?? []);
+  entries = mergeOutline(rows.slice().sort((x, y) => x.seq - y.seq), outline ?? []);
+  renderStream();
+  await refreshPaneData();
+  rpc('setActiveAgent', { agentId: id }).catch(() => {});
+}
+
+async function refreshPaneData() {
+  if (!activeId) return;
+  const [r, rules, status, map] = await Promise.all([
+    rpc('getAgentAutomations', { agentId: activeId }).catch(() => []),
+    rpc('getAutoReviewRules').catch(() => ({})),
+    rpc('getHostStatus').catch(() => ({})),
+    rpc('getServiceMap').catch(() => null),
+  ]);
+  routines = r ?? [];
+  reviewRules = rules ?? {};
+  hostStatus = { ...(status ?? {}), ports: map?.ports ?? {} };
+  renderPane();
+}
+
+// Trigger one room round and surface each member's outcome as a service line.
+// Wide windows collapse the pane; narrow ones (where it is folded away by default)
+// reveal it as an overlay instead. One button, two behaviours, no scrollbar.
+// Three width regimes, one meaning for the button (“show/hide details”):
+//   >1200px  the pane is a grid track; hidden by .no-pane
+//   821–1200 the pane is a grid track revealed by .overlay-open
+//   <=820    the pane is an overlay, mutually exclusive with the roster
+function paneOpen() {
+  const app = $('app');
+  if (window.matchMedia('(max-width: 820px)').matches) return app.classList.contains('pane-open');
+  if (window.matchMedia('(max-width: 1200px)').matches) return app.classList.contains('overlay-open');
+  return !app.classList.contains('no-pane');
+}
+
+function togglePane() {
+  const app = $('app');
+  if (window.matchMedia('(max-width: 820px)').matches) {
+    app.classList.remove('rail-open');
+    app.classList.toggle('pane-open');
+    return;
+  }
+  if (window.matchMedia('(max-width: 1200px)').matches) {
+    app.classList.toggle('overlay-open');
+    return;
+  }
+  app.classList.toggle('no-pane');
+}
+
+// Same idea for the roster: "no-rail" always means hidden.
+function toggleRail() {
+  const app = $('app');
+  if (window.matchMedia('(max-width: 820px)').matches) {
+    app.classList.remove('pane-open');
+    // Drawer mode: the rail is shown full-width with labels, never the icon variant.
+    app.classList.remove('no-rail');
+    app.classList.toggle('rail-open');
+    return;
+  }
+  app.classList.toggle('no-rail');
+}
+
+// Tapping the backdrop closes whichever overlay is open.
+document.addEventListener('click', (e) => {
+  const app = $('app');
+  if (!app.classList.contains('rail-open') && !app.classList.contains('pane-open')) return;
+  if (e.target.closest('.rail, .pane, #toggleInfo, #toggleRail')) return;
+  app.classList.remove('rail-open', 'pane-open');
+});
+
+// Narrow screens start with the side panels folded so the conversation gets the room.
+// Narrow screens start with the side panels folded so the conversation gets the room.
+(() => {
+  const app = $('app');
+  if (window.matchMedia('(max-width: 1200px)').matches) app.classList.add('no-pane');
+  // The narrow layout hides the rail with CSS; `no-rail` would also strip the labels
+  // from the drawer, which is why the drawer used to open as a column of bare icons.
+  app.classList.remove('no-rail');
+})();
+
+async function runRoomRound() {
+  if (!activeId) return;
+  $('status').textContent = '群组发言中…';
+  const seen = [];
+  const unsub = hostEvents.subscribe((ev) => {
+    if (ev.type === 'room-member-turn-end' && ev.agentId === activeId) {
+      const name = agents.find((a) => a.id === ev.memberAgentId)?.name ?? ev.memberAgentId.slice(0, 8);
+      seen.push(`${name}: ${ev.outcome}`);
+      entries.push({
+        kind: 'notice',
+        id: `room-${ev.nonce}`,
+        text: `${name} → ${ev.outcome}`,
+        level: ev.shown ? 'info' : 'warn',
+        timestampMs: Date.now(),
+      });
+      renderStream();
+    }
+  });
+  try {
+    const out = await rpc('runRoomTurn', { roomId: activeId, newMessages: [] });
+    $('status').textContent = `round done · ${out.results.length} member(s)`;
+    reloadTranscript();
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  } finally {
+    unsub();
+  }
+}
+
+async function resolveApproval(entryId, resolution) {
+  try {
+    await rpc('resolveAutoReviewApproval', { agentId: activeId, entryId, resolution });
+    $('status').textContent = resolution === 'always' ? '已放行并记住该命令'
+      : `已${resolution === 'approved' ? '批准' : '拒绝'}`;
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+
+async function answerWidget(entryId, value) {
+  try {
+    await rpc('respondToWidget', { agentId: activeId, entryId, value });
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+
+async function send() {
+  const input = $('input');
+  const text = input.value.trim();
+  if (!text || !activeId) return;
+  input.value = '';
+  input.style.height = 'auto';
+  $('status').textContent = '发送中…';
+  try {
+    // Attachments already live in workspace/uploads; their paths ride with the prompt.
+    const paths = pendingFiles.map((f) => f.path);
+    const acc = await rpc('sendPrompt', {
+      agentId: activeId, prompt: text,
+      ...(paths.length ? { attachmentPaths: paths } : {}),
+      ...(replyTarget ? { replyTo: replyTarget.id } : {}),
+    });
+    clearReply();
+    if (paths.length) { pendingFiles = []; renderChips(); }
+    // Optimistic row under the nonce, so the operator sees their message instantly.
+    if (acc?.clientNonce && acc?.entryId) {
+      changedMids.set(acc.clientNonce, acc.entryId);
+      if (!entries.some((e) => e.id === acc.entryId || e.id === acc.clientNonce)) {
+        entries.push({
+          kind: 'message', id: acc.entryId, role: 'user', clientNonce: acc.clientNonce,
+          message: { type: 'text', content: text },
+          ...(paths.length ? { attachments: paths } : {}),
+          timestampMs: acc.acceptedAtMs ?? Date.now(),
+        });
+        pendingIds.add(acc.entryId);
+        renderStream();
+      }
+    }
+    $('status').textContent = '';
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+
+// Apply the host's nonce->entryId table: any node still keyed by a nonce is re-keyed
+// to its real entry id, without touching the rest of the stream.
+function applyChangedMids(pairs) {
+  let changed = false;
+  for (const [nonce, entryId] of pairs ?? []) {
+    changedMids.set(nonce, entryId);
+    const node = document.querySelector(`[data-entry-id="${nonce}"]`);
+    if (node) {
+      node.dataset.entryId = entryId;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+/* ---------- command palette ---------- */
+// Chinese names for the real UI-map commands. The ids stay as shipped so the mapping
+// is auditable; only the label the operator sees is translated.
+const CMD_LABELS_ZH = {
+  'sand.keyboardShortcuts': '键盘快捷键',
+  'sand.send': '发送消息',
+  'sand.newAgent': '新建 Bot',
+  'sand.newGroupChat': '新建群聊',
+  'sand.commandPalette': '跳转到…',
+  'sand.openSettings': '打开设置',
+  'sand.toggleAgentSettings': '切换 Bot 设置',
+  'sand.openTools': '自定义',
+  'sand.focusInput': '聚焦输入框',
+  'sand.addSelectionToPrompt': '把选中内容加入输入',
+  'sand.findInChat': '在对话中查找',
+  'sand.focusSearch': '搜索 Bot',
+  'sand.previousAgent': '上一个 Bot',
+  'sand.nextAgent': '下一个 Bot',
+  'sand.navigateBack': '后退',
+  'sand.navigateForward': '前进',
+  'sand.openSkills': '技能',
+  'sand.toggleSidebar': '折叠侧栏',
+  'sand.toggleInfo': '显示/隐藏详情',
+};
+const zhLabel = (c) => {
+  if (CMD_LABELS_ZH[c.id]) return CMD_LABELS_ZH[c.id];
+  const m = /^sand\.focusAgent(\d)$/.exec(c.id ?? '');
+  if (m) return `聚焦侧栏 Bot ${m[1]}`;
+  return c.label || c.id;
+};
+
+const PALETTE_FALLBACK = [
+  { id: 'local.search', label: '搜索全部对话', run: () => openSearch() },
+  { id: 'local.export', label: '导出当前对话', run: () => exportCurrent() },
+  { id: 'sand.send', label: 'Send message', shortcut: '↵' },
+  { id: 'sand.newAgent', label: 'New Bot', shortcut: '⌘⇧N' },
+  { id: 'sand.commandPalette', label: 'Jump to', shortcut: '⌘K' },
+  { id: 'sand.openSettings', label: 'Open settings', shortcut: '⌘,' },
+  { id: 'sand.toggleInfo', label: 'Toggle details', shortcut: '⌘⇧I' },
+  { id: 'sand.toggleSidebar', label: 'Toggle compact sidebar', shortcut: '' },
+  { id: 'sand.focusInput', label: 'Focus prompt', shortcut: '⌘J' },
+  { id: 'sand.findInChat', label: 'Find in chat', shortcut: '⌘F' },
+];
+
+let paletteSel = 0;
+let paletteItems = [];
+
+function openPalette() {
+  $('paletteInput').value = '';
+  renderPalette('');
+  $('palette').classList.add('open');
+  $('paletteInput').focus();
+}
+function closePalette() { $('palette').classList.remove('open'); }
+
+function renderPalette(q) {
+  // Local commands are always available; the real UI map contributes the rest.
+  const all = [...(commands.length ? commands : []), ...PALETTE_FALLBACK];
+  paletteItems = all.filter((c) => !q || `${c.label} ${c.id}`.toLowerCase().includes(q.toLowerCase())).slice(0, 12);
+  paletteSel = 0;
+  const list = $('paletteList');
+  list.innerHTML = '';
+  paletteItems.forEach((c, i) => {
+    const el = document.createElement('div');
+    el.className = `item${i === paletteSel ? ' sel' : ''}`;
+    el.innerHTML = '<span></span><span class="sc"></span>';
+    el.firstElementChild.textContent = zhLabel(c);
+    el.lastElementChild.textContent = c.shortcut ?? '';
+    el.onclick = () => runCommand(paletteItems[i]);
+    list.appendChild(el);
+  });
+  if (!paletteItems.length) list.innerHTML = '<div class="empty" style="padding:14px">没有匹配的命令</div>';
+}
+
+function runCommand(cmd) {
+  closePalette();
+  // A local command carries its own action; the UI-map ones are matched by id below.
+  if (typeof cmd?.run === 'function') { cmd.run(); return; }
+  switch (cmd && cmd.id) {
+    case 'sand.send': $('send').click(); break;
+    case 'sand.focusInput': $('input').focus(); break;
+    case 'sand.toggleInfo': togglePane(); break;
+    case 'sand.toggleSidebar': $('app').classList.toggle('no-rail'); break;
+    case 'sand.newAgent': createAgent(); break;
+    case 'sand.findInChat': $('search').focus(); break;
+    default: $('status').textContent = `command: ${cmd && cmd.id}`;
+  }
+}
+
+async function createAgent() {
+  const name = prompt('New bot name?');
+  if (!name) return;
+  try {
+    const a = await rpc('createAgent', { profile: { name, description: '' } });
+    agents = await rpc('listAgents');
+    renderRoster();
+    await selectAgent(a.id);
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+
+/* ---------- events ---------- */
+// Local fan-out over the single EventSource: features subscribe without competing
+// for the SSE callback.
+const hostEvents = (() => {
+  const listeners = new Set();
+  return {
+    subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    publish(ev) {
+      for (const fn of listeners) {
+        try { fn(ev); } catch { /* a broken listener must not break the stream */ }
+      }
+    },
+  };
+})();
+
+function connectEvents() {
+  const es = new EventSource(`/events${TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : ''}`);
+  es.onopen = () => { $('conn').textContent = 'live'; $('conn').className = 'pill live'; };
+  es.onerror = () => { $('conn').textContent = 'reconnecting'; $('conn').className = 'pill down'; };
+  es.onmessage = (msg) => {
+    const ev = JSON.parse(msg.data);
+    hostEvents.publish(ev);
+    if (ev.agentId && ev.agentId !== activeId) {
+      const a = agents.find((x) => x.id === ev.agentId);
+      if (a) a.lastActivityMs = Date.now();
+      renderRoster();
+      return;
+    }
+    switch (ev.type) {
+      case 'transcript': {
+        const cached = ev.entry.id;
+        // The optimistic row already carries this id; appending again would show the
+        // operator's own message twice.
+        const existing = entries.findIndex((e) => e.id === cached);
+        if (existing >= 0) {
+          entries[existing] = { ...entries[existing], ...ev.entry };
+        } else {
+          entries.push(ev.entry);
+        }
+        // If a node is already showing this row under another key, re-key it.
+        const nodes = document.querySelectorAll('[data-entry-id]');
+        for (const n of nodes) {
+          const key = n.dataset.entryId;
+          if (key !== cached && changedMids.get(key) === cached) n.dataset.entryId = cached;
+        }
+        renderStream();
+        break;
+      }
+      case 'text-delta': {
+        // The answer has begun: fold this turn's reasoning with the transition.
+        if (ev.turnId && String(ev.text ?? '').length > 0) {
+          const r = document.querySelector(`.reasoning[data-turn-id="${ev.turnId}"]`);
+          // Fold only once there is a real answer to hand over to.
+          if (r && r.classList.contains('open') && r.dataset.state === 'running') {
+            const body = r.querySelector('.rbody > div');
+            if (body && body.textContent.trim().length > 0) {
+              r.dataset.state = 'ok';
+              r.classList.remove('open');
+            }
+          }
+        }
+        bumpGen(String(ev.text ?? '').length);
+        const host = document.querySelector(`.msg[data-entry-id="${ev.entryId}"] .btext`);
+        if (host) {
+          host.textContent = cleanText(host.textContent + ev.text);
+          $('log').scrollTop = $('log').scrollHeight;
+        } else {
+          entries.push({ kind: 'send-message', id: ev.entryId, message: { type: 'text', content: ev.text }, timestampMs: Date.now() });
+          renderStream();
+        }
+        break;
+      }
+      case 'reasoning-delta': {
+        // The reasoning entry id changes per turn merge, so match by turn first.
+        let d = document.querySelector(
+          ev.turnId ? `.reasoning[data-turn-id="${ev.turnId}"] .rbody > div` : null,
+        );
+        if (!d) d = document.querySelector(`.reasoning[data-entry-id="${ev.entryId}"] .rbody > div`);
+        if (!d) {
+          // Fall back to the newest reasoning block: one turn, one block, always.
+          const all = document.querySelectorAll('.reasoning');
+          const last = all[all.length - 1];
+          if (last && last.dataset.state === 'running') {
+            d = last.querySelector('.rbody > div');
+            if (last.dataset.turnId == null && ev.turnId) last.dataset.turnId = ev.turnId;
+          }
+        }
+        if (d) {
+          d.textContent = cleanText(d.textContent + ev.text);
+          const host = d.closest('.reasoning');
+          if (host) {
+            host.querySelector('.rpeek').textContent = firstMeaningfulLine(d.textContent);
+            host.dataset.state = 'running';
+            host.classList.add('open');
+          }
+          autoScroll();
+        } else {
+          // Append the node in place: a full re-render would rebuild it and drop `open`.
+          entries.push({ kind: 'reasoning', id: ev.entryId, turnId: ev.turnId, text: ev.text, timestampMs: Date.now() });
+          const node = nodeFor({
+            kind: 'reasoning',
+            id: ev.entryId,
+            turnId: ev.turnId,
+            text: cleanText(ev.text),
+            running: true,
+          });
+          if (node) {
+            const log = $('log');
+            const empty = log.querySelector('.empty');
+            if (empty) empty.remove();
+            log.appendChild(node);
+            node.dataset.state = 'running';
+            node.classList.add('open');
+            autoScroll();
+          }
+        }
+        break;
+      }
+      case 'tool-call':
+      case 'approval-request':
+      case 'widget-request':
+        if (ev.entry) {
+          entries = entries.filter((e) => e.id !== ev.entry.id);
+          entries.push(ev.entry);
+          renderStream();
+        }
+        break;
+      case 'agent-to-user':
+        // A different bot messaged the operator. Append it if we are showing that bot,
+        // otherwise just flag the roster so the operator notices.
+        if (ev.entry) {
+          if (ev.agentId === activeId) {
+            entries = dedupe([...entries.filter((e) => e.id !== ev.entry.id), ev.entry]);
+            renderStream();
+          } else {
+            const a = agents.find((x) => x.id === ev.agentId);
+            if (a) a.unread = (a.unread ?? 0) + 1;
+            renderRoster();
+          }
+        }
+        break;
+      case 'turn-start':
+      case 'queue-dequeued':
+        setBusy(true);
+        // Only refresh the pending set; re-rendering here would rebuild the live
+        // reasoning node and drop its open state.
+        rpc('getPendingEntryIds', { agentId: activeId })
+          .then((p) => { pendingIds = new Set(p ?? []); })
+          .catch(() => {});
+        break;
+      case 'turn-end':
+        // Freeze the measured throughput onto the turn: the number stays visible in the
+        // answer footer after generation stops.
+        if (genStats && ev.turnId) {
+          const secs = Math.max(0.2, (Date.now() - genStats.startedAt) / 1000);
+          turnUsage.set(ev.turnId, {
+            ...(ev.usage ?? {}),
+            charsPerSec: genStats.chars > 0 ? Math.round(genStats.chars / secs) : null,
+            measuredMs: Math.round((Date.now() - genStats.startedAt)),
+          });
+        }
+        setBusy(false);
+        // The answer is finished: fold this turn's reasoning first, so the transition
+        // plays, then let the reload settle the final state.
+        if (ev.turnId) {
+          const r = document.querySelector(`.reasoning[data-turn-id="${ev.turnId}"]`);
+          if (r && r.dataset.state === 'running') {
+            r.dataset.state = 'ok';
+            r.classList.remove('open');
+          }
+        }
+        if (ev.turnId) {
+          settledTurns.add(ev.turnId);
+          // Merge rather than replace: the rate captured above must survive.
+          turnUsage.set(ev.turnId, { ...(turnUsage.get(ev.turnId) ?? {}), ...(ev.usage ?? {}) });
+        }
+        // The status line stays quiet once the answer's own footer carries the numbers.
+        $('status').textContent = '';
+        reloadTranscript();
+        break;
+      case 'turn-error':
+        setBusy(false);
+        if (ev.turnId) settledTurns.add(ev.turnId);
+        $('status').textContent = ev.error;
+        reloadTranscript();
+        break;
+      case 'turn-interrupted':
+        setBusy(false);
+        if (ev.turnId) settledTurns.add(ev.turnId);
+        $('status').textContent = '已停止';
+        reloadTranscript();
+        break;
+      case 'approval-expired':
+      case 'approval-resolved':
+        reloadTranscript();
+        refreshPaneData();
+        break;
+      default:
+        break;
+    }
+  };
+}
+
+function reloadTranscript() {
+  if (!activeId) return;
+  Promise.all([
+    rpc('getAgentTranscript', { agentId: activeId, limit: 300 }),
+    rpc('getAgentOutline', { agentId: activeId }).catch(() => []),
+    rpc('getPendingEntryIds', { agentId: activeId }).catch(() => []),
+  ])
+    .then(([rows, outline, pending]) => {
+      pendingIds = new Set(pending ?? []);
+      entries = dedupe(mergeOutline(rows.slice().sort((a, b) => a.seq - b.seq), outline ?? []));
+      renderStream();
+    })
+    .catch(() => {});
+  refreshPaneData();
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  $('conn').textContent = 'connecting…';
+  const status = await rpc('getHostStatus').catch(() => null);
+  if (status) hostStatus = status;
+  activeId = status?.activeAgentId ?? null;
+  agents = await rpc('listAgents').catch(() => []);
+  rpc('getChangedMids').then((pairs) => applyChangedMids(pairs)).catch(() => {});
+  if (!agents.length) {
+    $('log').innerHTML = '<div class="empty" style="margin:auto">还没有 bot。运行 <code>mgb init</code> 创建一个。</div>';
+    renderRoster();
+    return;
+  }
+  await selectAgent(activeId ?? agents[0].id);
+  connectEvents();
+}
+
+/* ---------- wiring ---------- */
+fetch('/uimap.json')
+  .then((r) => r.json())
+  .then((m) => { uimap = m; commands = m.commands ?? []; renderPane(); })
+  .catch(() => {});
+
+$('send').onclick = send;
+
+// Stop: interrupts the in-flight model stream for the active agent.
+// ---- model picker -----------------------------------------------------------
+// The pill shows the active model; clicking it lists what the provider actually offers
+// and switching writes the binding, so the next turn uses it.
+let modelCatalog = null;
+
+async function openModelMenu() {
+  const menu = $('modelMenu');
+  if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
+  menu.classList.add('open');
+  $('modelFilter').value = '';
+  $('modelList').innerHTML = '<div class="mempty">读取模型列表…</div>';
+
+  if (!modelCatalog) {
+    const r = await rpc('listModels', { agentId: activeId }).catch((e) => ({ error: String(e.message) }));
+    modelCatalog = r ?? { models: [] };
+  }
+  renderModelList('');
+  $('modelFilter').focus();
+}
+
+function renderModelList(filter) {
+  const box = $('modelList');
+  const cat = modelCatalog ?? { models: [] };
+  if (cat.error) {
+    box.innerHTML = `<div class="mempty">读不到模型列表：${esc(cat.error)}</div>`;
+    return;
+  }
+  const q = String(filter ?? '').toLowerCase();
+  const rows = (cat.models ?? []).filter((m) => !q || m.id.toLowerCase().includes(q));
+  if (!rows.length) {
+    box.innerHTML = '<div class="mempty">没有匹配的模型</div>';
+    return;
+  }
+  box.innerHTML = '';
+  const current = binding.modelId;
+  for (const m of rows) {
+    const el = document.createElement('div');
+    el.className = `mitem${m.id === current ? ' cur' : ''}`;
+    el.innerHTML = `<span class="mid"></span><span class="mctx"></span>`;
+    el.querySelector('.mid').textContent = m.id;
+    el.querySelector('.mctx').textContent = m.context ? `${Math.round(m.context / 1000)}k` : '';
+    el.onclick = () => pickModel(m.id);
+    box.appendChild(el);
+  }
+}
+
+async function pickModel(modelId) {
+  $('modelMenu').classList.remove('open');
+  if (modelId === binding.modelId) return;
+  try {
+    await rpc('setAgentBinding', { agentId: activeId, patch: { modelId } });
+    binding = await rpc('getAgentBinding', { agentId: activeId });
+    $('model').textContent = binding.modelId;
+    renderPane(); // the Details tab shows the model too
+    $('status').textContent = `已切换到 ${modelId}`;
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+
+$('model').onclick = (e) => { e.stopPropagation(); openModelMenu(); };
+$('modelMenu').onclick = (e) => e.stopPropagation();
+$('modelFilter').addEventListener('input', (e) => renderModelList(e.target.value));
+document.addEventListener('click', () => $('modelMenu').classList.remove('open'));
+
+// ---- reply-to ---------------------------------------------------------------
+// Quoting keeps the reference in the sent entry, so the model sees what was answered.
+let replyTarget = null;
+
+function setReplyTo(entry) {
+  replyTarget = entry;
+  const whom = entry.role === 'user'
+    ? (entry.fromAgent?.name ?? '我')
+    : (agentName() || 'bot');
+  $('status').textContent = `引用 ${whom} 的消息（Esc 取消）`;
+  $('input').focus();
+}
+
+function clearReply() {
+  if (!replyTarget) return;
+  replyTarget = null;
+  $('status').textContent = '';
+}
+
+// ---- attachments ------------------------------------------------------------
+// Files are uploaded immediately (so a large one does not block send), then their
+// workspace paths ride along with the prompt.
+let pendingFiles = [];
+
+function renderChips() {
+  const box = $('chips');
+  box.innerHTML = '';
+  box.classList.toggle('on', pendingFiles.length > 0);
+  pendingFiles.forEach((f, i) => {
+    const el = document.createElement('span');
+    el.className = 'chip';
+    el.innerHTML = `<span class="cname"></span><button class="cdel" title="移除">×</button>`;
+    el.querySelector('.cname').textContent = f.name;
+    el.querySelector('.cdel').onclick = () => { pendingFiles.splice(i, 1); renderChips(); };
+    box.appendChild(el);
+  });
+}
+
+async function uploadFile(file) {
+  const res = await fetch('/api/attachments', {
+    method: 'POST',
+    headers: { 'x-filename': encodeURIComponent(file.name) },
+    body: file,
+  });
+  const body = await res.json();
+  if (!body.ok) throw new Error(body.error ?? 'upload failed');
+  return body;
+}
+
+$('attach').onclick = () => $('fileInput').click();
+$('fileInput').addEventListener('change', async (e) => {
+  const files = [...(e.target.files ?? [])];
+  e.target.value = '';
+  for (const f of files) {
+    try {
+      $('status').textContent = `上传 ${f.name}…`;
+      const r = await uploadFile(f);
+      pendingFiles.push({ name: r.name, path: r.relativePath, bytes: r.bytes });
+      renderChips();
+      $('status').textContent = '';
+    } catch (err) {
+      $('status').textContent = `上传失败：${err.message}`;
+    }
+  }
+});
+
+// Paste an image straight into the composer.
+$('input').addEventListener('paste', async (e) => {
+  const items = [...(e.clipboardData?.items ?? [])];
+  const imgs = items.filter((i) => i.kind === 'file').map((i) => i.getAsFile()).filter(Boolean);
+  if (!imgs.length) return;
+  e.preventDefault();
+  for (const f of imgs) {
+    try {
+      const named = new File([f], f.name || `paste-${Date.now()}.png`, { type: f.type });
+      const r = await uploadFile(named);
+      pendingFiles.push({ name: r.name, path: r.relativePath, bytes: r.bytes });
+      renderChips();
+    } catch (err) { $('status').textContent = `上传失败：${err.message}`; }
+  }
+});
+
+// ---- settings ---------------------------------------------------------------
+let settingsSection = 'look';
+let settingsData = null;
+
+async function openSettings() {
+  $('settingsPanel').classList.add('open');
+  const body = $('settingsBody');
+  body.innerHTML = '<div class="s-empty">读取中…</div>';
+  const st = await rpc('getHostSettings', {}).catch(() => ({}));
+  const review = await rpc('getAutoReviewRules', {}).catch(() => ({}));
+  const host = await rpc('getHostStatus', {}).catch(() => ({}));
+  settingsData = { st, review, host };
+  renderSettings();
+}
+
+// Four pages: each holds enough rows to fill the panel, so no page looks empty.
+const SETTINGS_SECTIONS = [
+  { id: 'look', label: '外观与语言' },
+  { id: 'notify', label: '通知与网络' },
+  { id: 'review', label: '自动审批' },
+  { id: 'about', label: '关于与维护' },
+];
+
+function renderSettings() {
+  const { st, review, host } = settingsData ?? {};
+  const nav = $('settingsNav');
+  const body = $('settingsBody');
+  if (!nav || !body) return;
+
+  nav.innerHTML = '';
+  for (const sec of SETTINGS_SECTIONS) {
+    const b = document.createElement('button');
+    b.textContent = sec.label;
+    b.className = sec.id === settingsSection ? 'on' : '';
+    b.onclick = () => { settingsSection = sec.id; renderSettings(); };
+    nav.appendChild(b);
+  }
+
+  const lang = st?.language === 'en' ? 'en' : 'zh';
+  const notif = st?.notifications?.isEnabled !== false;
+  const msgs = st?.messagesEnabled !== false;
+  const botColor = st?.botColorInChatEnabled !== false;
+  const tunnel = st?.egressTunnelEnabled === true;
+  const reviewOn = st?.autoReviewInstructions?.isEnabled !== false;
+  const ceiling = review?.ceilings?.shell ?? 'ASK';
+  const allowList = review?.alwaysAllow ?? [];
+  const allowRules = st?.autoReviewInstructions?.allowInstructions ?? [];
+  const blockRules = st?.autoReviewInstructions?.blockInstructions ?? [];
+  const port = location.port || '80';
+
+  const sw = (id, on) => `<button class="s-switch" id="${id}" role="switch" aria-checked="${on}"></button>`;
+  const row = (label, desc, ctl) =>
+    `<div class="s-row"><span class="s-label">${label}<span class="s-desc">${desc}</span></span>${ctl}</div>`;
+
+  const sections = {
+    look: () => row('界面语言', '影响界面文案与 bot 写入记忆的语言',
+        `<select id="setLang"><option value="zh"${lang === 'zh' ? ' selected' : ''}>中文</option><option value="en"${lang === 'en' ? ' selected' : ''}>English</option></select>`)
+      + row('气泡配色', '按 bot 区分聊天气泡颜色', sw('setBotColor', botColor))
+      + row('时区', '定时任务按此时区触发',
+        `<input type="text" id="setTz" value="${esc(st?.userTimeZone ?? '')}" />`),
+
+    notify: () => row('桌面通知', '任务完成或需要批准时提醒', sw('setNotif', notif))
+      + row('消息接收', '允许 bot 主动发消息给你', sw('setMsgs', msgs))
+      + row('外网隧道', '把本机网关暴露到公网（谨慎开启）', sw('setTunnel', tunnel)),
+
+    review: () => row('启用自动审批', '关闭后所有命令都需要手动确认', sw('setReview', reviewOn))
+      + row('shell 审批策略', '命令执行前的确认方式',
+        `<select id="setCeiling">
+          <option value="ASK"${ceiling === 'ASK' ? ' selected' : ''}>每次询问</option>
+          <option value="ALWAYS"${ceiling === 'ALWAYS' ? ' selected' : ''}>总是允许</option>
+          <option value="NEVER"${ceiling === 'NEVER' ? ' selected' : ''}>从不允许</option>
+        </select>`)
+      + row('常驻放行', '已被记住的命令',
+        `<span class="s-val">${allowList.length} 条</span><button class="s-act danger" id="clearAllow">清空</button>`)
+      + row('允许规则', '命中的命令直接放行',
+        `<span class="s-val">${allowRules.length} 条</span><button class="s-act" id="editAllow">编辑</button>`)
+      + row('拒绝规则', '命中的命令直接拒绝',
+        `<span class="s-val">${blockRules.length} 条</span><button class="s-act" id="editBlock">编辑</button>`),
+
+    about: () => row('数据目录', '所有 bot 与对话的存放位置',
+        `<span class="s-val">${esc(host?.root ?? '~/.mygrokbot')}</span>`)
+      + row('网关端口', '本机 HTTP 服务端口', `<span class="s-val">${esc(port)}</span>`)
+      + row('bot 数量', '当前名册', `<span class="s-val">${host?.agentCount ?? '—'}</span>`)
+      + row('版本', '许可证与版本', `<span class="s-val">GPL-3.0 · mygrokbot</span>`)
+      + row('技能目录', '重新扫描已安装技能', `<button class="s-act" id="actRefresh">刷新</button>`)
+      + row('导出对话', '把当前对话存成 Markdown', `<button class="s-act" id="actExport">导出</button>`)
+      + row('重新加载', '重新读取设置与名册', `<button class="s-act" id="actReload">重新加载</button>`),
+  };
+
+  body.innerHTML = (sections[settingsSection] ?? sections.look)();
+
+  const bindSwitch = (id, apply) => {
+    const el = body.querySelector('#' + id);
+    if (!el) return;
+    el.onclick = async () => {
+      const next = el.getAttribute('aria-checked') !== 'true';
+      el.setAttribute('aria-checked', String(next));
+      try { await apply(next); $('status').textContent = '已保存'; }
+      catch (err) { el.setAttribute('aria-checked', String(!next)); $('status').textContent = err.message; }
+    };
+  };
+  bindSwitch('setBotColor', (v) => rpc('setHostSettings', { patch: { botColorInChatEnabled: v } }));
+  bindSwitch('setNotif', (v) => rpc('setHostSettings', { patch: { notifications: { isEnabled: v } } }));
+  bindSwitch('setMsgs', (v) => rpc('setHostSettings', { patch: { messagesEnabled: v } }));
+  bindSwitch('setTunnel', (v) => rpc('setHostSettings', { patch: { egressTunnelEnabled: v } }));
+  bindSwitch('setReview', (v) => rpc('setHostSettings', { patch: { autoReviewInstructions: { isEnabled: v } } }));
+
+  body.querySelector('#setLang')?.addEventListener('change', async (e) => {
+    try { await rpc('setLanguage', { language: e.target.value }); $('status').textContent = '语言已保存，刷新页面生效'; }
+    catch (err) { $('status').textContent = err.message; }
+  });
+  body.querySelector('#setTz')?.addEventListener('change', async (e) => {
+    try { await rpc('setHostSettings', { patch: { userTimeZone: e.target.value.trim() } }); $('status').textContent = '时区已保存'; }
+    catch (err) { $('status').textContent = err.message; }
+  });
+  body.querySelector('#setCeiling')?.addEventListener('change', async (e) => {
+    try {
+      await rpc('setAutoReviewRules', { patch: { ceilings: { shell: e.target.value } } });
+      settingsData.review = await rpc('getAutoReviewRules');
+      reviewRules = settingsData.review; renderPane();
+      $('status').textContent = `shell 策略 → ${e.target.value}`;
+    } catch (err) { $('status').textContent = err.message; }
+  });
+  body.querySelector('#clearAllow')?.addEventListener('click', async () => {
+    if (!allowList.length) { $('status').textContent = '没有常驻放行的命令'; return; }
+    if (!confirm(`清空 ${allowList.length} 条常驻放行命令？`)) return;
+    await rpc('setAutoReviewRules', { patch: { alwaysAllow: [] } });
+    settingsData.review = await rpc('getAutoReviewRules');
+    reviewRules = settingsData.review; renderSettings();
+  });
+  const editRules = async (key, current, title) => {
+    const text = prompt(`${title}（每行一条）`, current.join('\n'));
+    if (text === null) return;
+    const list = text.split('\n').map((x) => x.trim()).filter(Boolean);
+    await rpc('setHostSettings', { patch: { autoReviewInstructions: { [key]: list } } });
+    settingsData.st = await rpc('getHostSettings', {});
+    renderSettings();
+  };
+  body.querySelector('#editAllow')?.addEventListener('click', () => editRules('allowInstructions', allowRules, '允许规则'));
+  body.querySelector('#editBlock')?.addEventListener('click', () => editRules('blockInstructions', blockRules, '拒绝规则'));
+  body.querySelector('#actRefresh')?.addEventListener('click', async () => {
+    try { const r = await rpc('refreshSkills', {}); $('status').textContent = `已刷新，${r?.count ?? ''} 个技能`; }
+    catch (err) { $('status').textContent = err.message; }
+  });
+  body.querySelector('#actExport')?.addEventListener('click', () => { closeSettings(); exportCurrent(); });
+  body.querySelector('#actReload')?.addEventListener('click', async () => {
+    await openSettings();
+    $('status').textContent = '已重新加载';
+  });
+}
+
+function closeSettings() { $('settingsPanel').classList.remove('open'); }
+$('settingsClose')?.addEventListener('click', closeSettings);
+$('settingsPanel')?.addEventListener('click', (e) => { if (e.target.id === 'settingsPanel') closeSettings(); });
+
+// ---- history search ---------------------------------------------------------
+async function openSearch() {
+  $('searchPanel').classList.add('open');
+  $('searchInput').value = '';
+  $('searchResults').innerHTML = '<div class="sempty">输入关键词，搜索所有 bot 的历史消息</div>';
+  $('searchInput').focus();
+}
+
+function closeSearch() { $('searchPanel').classList.remove('open'); }
+
+let searchTimer = null;
+$('searchInput')?.addEventListener('input', (e) => {
+  clearTimeout(searchTimer);
+  const q = e.target.value.trim();
+  if (!q) {
+    $('searchResults').innerHTML = '<div class="sempty">输入关键词，搜索所有 bot 的历史消息</div>';
+    return;
+  }
+  searchTimer = setTimeout(() => runSearch(q), 180);
+});
+
+async function runSearch(q) {
+  const box = $('searchResults');
+  box.innerHTML = '<div class="sempty">搜索中…</div>';
+  try {
+    const hits = await rpc('searchTranscripts', { query: q, limit: 40 });
+    if (!hits.length) { box.innerHTML = '<div class="sempty">没有匹配的消息</div>'; return; }
+    box.innerHTML = '';
+    for (const h of hits) {
+      const el = document.createElement('div');
+      el.className = 'sres';
+      el.innerHTML = `<div class="sbot"></div><div class="stext"></div>`;
+      el.querySelector('.sbot').textContent =
+        `${h.agentName} · ${fmtTime(h.timestampMs)}`;
+      const txt = el.querySelector('.stext');
+      // Highlight the hit without innerHTML from user data.
+      const i = h.snippet.toLowerCase().indexOf(q.toLowerCase());
+      if (i >= 0) {
+        txt.append(document.createTextNode(h.snippet.slice(0, i)));
+        const mark = document.createElement('mark');
+        mark.textContent = h.snippet.slice(i, i + q.length);
+        txt.append(mark, document.createTextNode(h.snippet.slice(i + q.length)));
+      } else txt.textContent = h.snippet;
+      el.onclick = () => { closeSearch(); selectAgent(h.agentId); };
+      box.appendChild(el);
+    }
+  } catch (err) {
+    box.innerHTML = `<div class="sempty">搜索失败：${esc(err.message)}</div>`;
+  }
+}
+
+$('searchPanel')?.addEventListener('click', (e) => { if (e.target.id === 'searchPanel') closeSearch(); });
+
+// ---- routine editor ---------------------------------------------------------
+// A small inline form instead of a modal: the routine tab already renders rows, so the
+// editor replaces the row content rather than opening another layer.
+function editRoutine(existing) {
+  const isNew = !existing;
+  const name = prompt('任务名称', existing?.name ?? '');
+  if (name === null) return;
+  const cron = prompt('cron 表达式（如 0 8 * * *）', existing?.schedule ?? '0 8 * * *');
+  if (cron === null) return;
+  const promptText = prompt('任务内容（发给 bot 的指令）', existing?.prompt ?? '');
+  if (promptText === null) return;
+  const args = {
+    agentId: activeId,
+    name: name.trim() || '未命名任务',
+    prompt: promptText.trim(),
+    cron: cron.trim(),
+  };
+  const call = isNew
+    ? rpc('createAgentAutomation', args)
+    : rpc('updateAgentAutomation', { ...args, slug: existing.slug });
+  call
+    .then(() => { $('status').textContent = isNew ? '已创建任务' : '已保存'; refreshPaneData(); })
+    .catch((err) => { $('status').textContent = err.message; });
+}
+
+// ---- skills -----------------------------------------------------------------
+async function showSkills() {
+  const r = await rpc('skillsCatalog', { agentId: activeId }).catch(() => ({ skills: [] }));
+  const list = r.skills ?? r ?? [];
+  $('status').textContent = list.length
+    ? `已安装技能：${list.map((s) => s.slug ?? s.name).join('、')}`
+    : '还没有安装技能';
+}
+
+// ---- export -----------------------------------------------------------------
+async function exportCurrent() {
+  try {
+    const r = await rpc('exportTranscript', { agentId: activeId });
+    const blob = new Blob([r.content], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = r.filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    $('status').textContent = `已导出 ${r.filename}`;
+  } catch (err) {
+    $('status').textContent = `导出失败：${err.message}`;
+  }
+}
+
+async function stopTurn() {
+  if (!activeId) return;
+  try {
+    await rpc('interruptAgentRun', { agentId: activeId });
+    $('status').textContent = '已请求停止';
+  } catch (err) {
+    $('status').textContent = String(err.message);
+  }
+}
+$('stop').onclick = stopTurn;
+setInterval(() => { if (genStats) updateHint(); }, 500);
+
+let genStats = null; // { startedAt, chars, tokens, thinking }
+
+function setBusy(busy) {
+  $('stop').classList.toggle('on', busy);
+  if (!busy) {
+    genStats = null;
+    return;
+  }
+  if (!genStats) genStats = { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true };
+  updateHint();
+}
+
+function bumpGen(chars, tokens = 0) {
+  if (!genStats) genStats = { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true };
+  genStats.chars += chars;
+  genStats.tokens += tokens;
+  updateHint();
+}
+
+// Throughput hint under the composer: chars/s and, once the provider reports usage,
+// real tokens/s. Chars are a stream-rate proxy — the only live signal available.
+// While the model is still reasoning there is no output to measure, so say what phase
+// it is in instead of showing a meaningless "0 字/秒".
+// The hint line was removed; the live rate now lives in the status line, which only
+// speaks while something is happening.
+function updateHint() {
+  if (!genStats) return;
+  const secs = Math.max(0.2, (Date.now() - genStats.startedAt) / 1000);
+  // Characters per second is the only live signal; tokens only exist at turn end.
+  const cps = Math.round(genStats.chars / secs);
+  if (genStats.thinking) {
+    $('status').textContent = `思考中… ${secs.toFixed(0)}s`;
+    return;
+  }
+  $('status').textContent = `生成中… ${cps} 字/秒`;
+}
+$('input').addEventListener('input', (e) => {
+  e.target.style.height = 'auto';
+  e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
+});
+// IME: while a Chinese/Japanese/Korean candidate window is open, Enter and Space belong
+// to the IME (commit the candidate), not to the composer. Without this guard, picking a
+// word sent the message. `isComposing` covers Chrome/Safari; the trailing guard covers
+// WebKit delivering the final keydown right after compositionend.
+let composing = false;
+$('input').addEventListener('compositionstart', () => { composing = true; });
+$('input').addEventListener('compositionend', () => {
+  // The keydown for the committing Enter/Space may still arrive; ignore it once.
+  setTimeout(() => { composing = false; }, 0);
+});
+$('input').addEventListener('keydown', (e) => {
+  if (e.isComposing || composing || e.keyCode === 229) return;
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+$('search').addEventListener('input', (e) => { searchQuery = e.target.value; renderRoster(); });
+$('toggleInfo').onclick = () => togglePane();
+$('newAgent').onclick = createAgent;
+$('toggleRail').onclick = toggleRail;
+if (window.matchMedia('(max-width: 820px)').matches) $('toggleRail').style.display = 'grid';
+$('openSettings').onclick = openSettings;
+$('openPlugins').onclick = () => { $('status').textContent = '插件：尚未接入'; };
+$('paletteInput').addEventListener('input', (e) => renderPalette(e.target.value));
+$('palette').addEventListener('click', (e) => { if (e.target.id === 'palette') closePalette(); });
+
+document.addEventListener('keydown', (e) => {
+  const meta = e.metaKey || e.ctrlKey;
+  if (e.key === 'Escape') {
+    if (replyTarget) { clearReply(); return; }
+    if ($('settingsPanel').classList.contains('open')) { closeSettings(); return; }
+    if ($('searchPanel').classList.contains('open')) { closeSearch(); return; }
+    if ($('modelMenu').classList.contains('open')) { $('modelMenu').classList.remove('open'); return; }
+    if ($('stop').classList.contains('on')) { e.preventDefault(); stopTurn(); return; }
+  }
+  if (meta && e.key === ',') { e.preventDefault(); openSettings(); return; }
+  if (meta && e.key === 'f') { e.preventDefault(); openSearch(); return; }
+  if (meta && e.key === 'k') { e.preventDefault(); openPalette(); return; }
+  if (meta && e.shiftKey && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); togglePane(); return; }
+  if (meta && e.key === ',') { e.preventDefault(); openPalette(); return; }
+  if (!$('palette').classList.contains('open')) return;
+  if (e.key === 'Escape') { closePalette(); return; }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    paletteSel = Math.max(0, Math.min(paletteItems.length - 1, paletteSel + (e.key === 'ArrowDown' ? 1 : -1)));
+    [...$('paletteList').children].forEach((el, i) => el.classList.toggle('sel', i === paletteSel));
+    return;
+  }
+  if (e.key === 'Enter') { e.preventDefault(); runCommand(paletteItems[paletteSel]); }
+});
+
+boot().catch((err) => {
+  $('log').innerHTML = `<div class="empty" style="margin:auto">${String(err.message)}</div>`;
+});
+</script>
+</body>
+</html>

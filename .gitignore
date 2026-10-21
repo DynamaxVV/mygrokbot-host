@@ -1,0 +1,20 @@
+node_modules/
+.scratch/
+*.log
+
+# Runtime data roots (never commit state or keys)
+.mygrokbot/
+sand-data/
+model-bindings.json
+tools.json
+
+# Never commit runtime secrets or local state
+secrets/
+.env
+*.env.json
+send-acceptance.json
+gateway.json
+host.lock
+
+# macOS
+.DS_Store
