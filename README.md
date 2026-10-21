@@ -288,6 +288,16 @@ mygrokbot/
 | 例行任务 | cron、webhook 触发、立即运行、编辑、删除 |
 | 技能 | 目录、安装、移除、刷新 |
 
+## 桌面端
+
+```bash
+npm install && npm run desktop    # 开发运行
+npm run dist:dmg                  # 打 DMG（未签名，可任意分发）
+```
+
+Electron 主进程直接跑 gateway，没有 sidecar。`.app` 245MB / DMG 112MB，其中代码只有 1.2MB，
+其余是 Chromium。细节、分发方式与限制见 [docs/DESKTOP.md](docs/DESKTOP.md)。
+
 ## 持久化部署
 
 开发时直接 `mgb serve` 即可；要让它常驻，做两件事：

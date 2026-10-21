@@ -14,7 +14,66 @@
     "start": "node bin/mgb.mjs serve",
     "cli": "node bin/mgb.mjs",
     "test": "node --test 'test/**/*.test.mjs'",
-    "doctor": "node bin/mgb.mjs doctor"
+    "doctor": "node bin/mgb.mjs doctor",
+    "desktop": "electron .",
+    "dist:mac": "electron-builder --mac --dir",
+    "dist:dmg": "electron-builder --mac dmg"
   },
-  "license": "GPL-3.0"
+  "license": "GPL-3.0",
+  "main": "desktop/main.mjs",
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "app.mygrokbot.host",
+    "productName": "MyGrokbot",
+    "asar": true,
+    "files": [
+      "desktop/**/*",
+      "src/**/*",
+      "bin/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/node_modules/**/{test,__tests__,tests,example,examples,doc,docs}/**",
+      "!**/*.{md,markdown}"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.mjs"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "darkModeSupport": true,
+      "electronLanguages": [
+        "en",
+        "zh_CN"
+      ]
+    },
+    "dmg": {
+      "title": "MyGrokbot",
+      "contents": [
+        {
+          "x": 140,
+          "y": 180
+        },
+        {
+          "x": 400,
+          "y": 180,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    }
+  }
 }

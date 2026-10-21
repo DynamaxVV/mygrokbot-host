@@ -18,3 +18,7 @@ host.lock
 
 # macOS
 .DS_Store
+
+# Build output
+dist/
+node_modules/
