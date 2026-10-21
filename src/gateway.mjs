@@ -21,6 +21,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { writeJson, readJson } from './paths.mjs';
 import { resolveBinding, setAgentBinding, removeAgentBinding, loadBindings } from './providers/bindings.mjs';
 import { searchTranscripts } from './db.mjs';
+import { secretStatus, setSecret, maskKey } from './secrets.mjs';
 import { loadRules, saveRules } from './review.mjs';
 
 const MAX_BODY = 8 * 1024 * 1024;
@@ -398,6 +399,16 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
 
     // ---- memory ---------------------------------------------------------
     readMemory: ({ agentId }) => ({ memory: roster.readMemoryAll(roster.resolve(agentId)) }),
+    // The profile file only: the pane edits what it can write back.
+    readMemoryProfile: ({ agentId }) => {
+      const id = roster.resolve(agentId);
+      return { memory: roster.readMemory(id), path: 'memory/profile.md' };
+    },
+    writeMemoryProfile: ({ agentId, text }) => {
+      const id = roster.resolve(agentId);
+      const file = roster.writeMemory(id, text);
+      return { saved: true, bytes: Buffer.byteLength(String(text ?? '')), file };
+    },
     updateMemory: ({ agentId, text, kind = 'note' }) => ({
       file: roster.appendMemory(roster.resolve(agentId), String(text), { kind }),
     }),
@@ -455,6 +466,71 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
         return { models: [], error: String(err?.message ?? err), baseUrl: binding.baseUrl };
       }
     },
+    // ---- provider configuration -------------------------------------------
+    // What the settings UI needs: the endpoint, the model, and whether a key exists —
+    // never the key itself. The value is written to secrets/env.json by setProviderConfig.
+    getProviderConfig: ({ agentId }) => {
+      const id = roster.resolve(agentId);
+      const b = resolveBinding(p.root, id, process.env);
+      const st = secretStatus(p.root, [b.apiKeyEnv]);
+      return {
+        agentId: id,
+        modelId: b.modelId,
+        baseUrl: b.baseUrl,
+        apiKeyEnv: b.apiKeyEnv,
+        keyIsSet: st[b.apiKeyEnv]?.isSet === true,
+        keySource: st[b.apiKeyEnv]?.source ?? null,
+        keyPreview: maskKey(b.apiKey),
+        bound: b.bound,
+      };
+    },
+
+    setProviderConfig: ({ agentId, modelId, baseUrl, apiKeyEnv, apiKey }) => {
+      const id = roster.resolve(agentId);
+      const patch = {};
+      if (typeof modelId === 'string' && modelId.trim()) patch.modelId = modelId.trim();
+      if (typeof baseUrl === 'string' && baseUrl.trim()) {
+        let u;
+        try { u = new URL(baseUrl.trim()); } catch { throw new Error('base URL 不是合法地址'); }
+        if (!/^https?:$/.test(u.protocol)) throw new Error('base URL 只支持 http/https');
+        patch.baseUrl = baseUrl.trim().replace(/\/+$/, '');
+      }
+      if (typeof apiKeyEnv === 'string' && apiKeyEnv.trim()) patch.apiKeyEnv = apiKeyEnv.trim();
+      if (Object.keys(patch).length) setAgentBinding(p.root, id, patch);
+      // An empty string clears the stored key; undefined leaves it untouched.
+      if (typeof apiKey === 'string') {
+        const target = patch.apiKeyEnv ?? resolveBinding(p.root, id, process.env).apiKeyEnv;
+        setSecret(p.root, target, apiKey);
+      }
+      const b = resolveBinding(p.root, id, process.env);
+      return { agentId: id, modelId: b.modelId, baseUrl: b.baseUrl, apiKeyEnv: b.apiKeyEnv, keyIsSet: Boolean(b.apiKey) };
+    },
+
+    // One cheap round trip against the configured endpoint: does it answer, and with
+    // which models? This is what the "测试连接" button calls.
+    testProvider: async ({ agentId, baseUrl, apiKey }) => {
+      const id = agentId ? roster.resolve(agentId) : roster.activeId();
+      const b = resolveBinding(p.root, id, process.env);
+      const url = String(baseUrl ?? b.baseUrl ?? '').replace(/\/+$/, '');
+      const key = String(apiKey ?? b.apiKey ?? '');
+      if (!url) return { ok: false, error: '没有配置 base URL' };
+      if (!key) return { ok: false, error: '没有配置 API Key' };
+      const started = Date.now();
+      try {
+        const res = await fetch(`${url}/models`, {
+          headers: { authorization: `Bearer ${key}` },
+          signal: AbortSignal.timeout(12_000),
+        });
+        const ms = Date.now() - started;
+        if (!res.ok) return { ok: false, status: res.status, ms, error: `HTTP ${res.status}` };
+        const body = await res.json().catch(() => ({}));
+        const count = Array.isArray(body?.data) ? body.data.length : 0;
+        return { ok: true, status: res.status, ms, models: count };
+      } catch (err) {
+        return { ok: false, ms: Date.now() - started, error: String(err?.message ?? err) };
+      }
+    },
+
     getAgentBinding: ({ agentId }) => {
       const id = roster.resolve(agentId);
       const binding = resolveBinding(p.root, id);

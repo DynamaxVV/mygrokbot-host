@@ -284,7 +284,9 @@ mygrokbot/
 | 附件 | 上传（25MB）、粘贴图片、气泡内联预览、路径注入模型上下文 |
 | 检索 | 跨 bot 全历史搜索（⌘F）、Markdown 导出 |
 | 消息 | 引用回复、图片内联、bot 主动通知（「主动通知」标记） |
-| 设置 | 分页面板（外观/通知与网络/自动审批/关于），深合并写盘 |
+| 设置 | 分页面板（模型接入/外观/通知与网络/自动审批/关于与维护），深合并写盘 |
+| 外观 | SVG 轮廓头像（12 形状 × 12 色 × 眼睛或自定义字符）、磨砂输入框、纸纹壁纸 |
+| 角色 | 幕僚长（置顶主 bot），可设/可换/可取消，取消后无人担任 |
 | 例行任务 | cron、webhook 触发、立即运行、编辑、删除 |
 | 技能 | 目录、安装、移除、刷新 |
 
@@ -304,6 +306,10 @@ Electron 主进程直接跑 gateway，没有 sidecar。`.app` 245MB / DMG 112MB�
 
 **① 密钥落盘**（否则重启后模型报缺少 key）
 
+桌面版的「设置 → 模型接入」可以直接填 Base URL 和 API Key，保存后由 `src/secrets.mjs`
+写入 `~/.mygrokbot/secrets/env.json`（创建即 0600，先写临时文件再 rename，避免短暂可读）。
+也可以手动：
+
 ```bash
 mkdir -p ~/.mygrokbot/secrets
 cat > ~/.mygrokbot/secrets/env.json <<'JSON'
@@ -312,7 +318,8 @@ JSON
 chmod 600 ~/.mygrokbot/secrets/env.json
 ```
 
-`bin/mgb.mjs` 启动时会把其中的键注入 `process.env`。binding 文件里依然只存**环境变量名**，不存密钥本身。
+`createHost()` 启动时把其中的键注入 `process.env`（显式环境变量优先），所以 CLI、桌面版、
+gateway 三个入口行为一致。binding 文件里依然只存**环境变量名**，不存密钥本身。
 
 **② 开机自启**（macOS launchd 示例）
 
@@ -369,4 +376,6 @@ launchctl unload ~/Library/LaunchAgents/com.mygrokbot.gateway.plist   # 停用
 
 - 包内事实与不可注入证据：[docs/PARITY.md](docs/PARITY.md)
 - 功能清单与验收记录：[docs/ACCEPTANCE.md](docs/ACCEPTANCE.md)
+- 本轮改动明细：[docs/CHANGELOG.md](docs/CHANGELOG.md)
+- 桌面端构建与分发：[docs/DESKTOP.md](docs/DESKTOP.md)
 - 本次重建的取舍：[docs/FLOW.md](docs/FLOW.md)

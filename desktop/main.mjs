@@ -99,6 +99,15 @@ function createWindow() {
 
   win.loadURL(url);
 
+  // Mark the page as running inside the desktop shell so the CSS can reserve room for
+  // the traffic lights and mark the top strip as a drag region. Set on dom-ready, not
+  // after load, to avoid a visible jump.
+  win.webContents.on('dom-ready', () => {
+    win.webContents
+      .executeJavaScript("document.documentElement.classList.add('desktop-mac')")
+      .catch(() => {});
+  });
+
   // External links open in the real browser, never inside the app shell.
   win.webContents.setWindowOpenHandler(({ url: target }) => {
     if (target.startsWith('http')) shell.openExternal(target);

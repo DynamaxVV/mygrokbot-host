@@ -18,6 +18,7 @@ import { ServerAgentProxy, createLocalTemporalTransport } from './proxy.mjs';
 import { createGateway } from './gateway.mjs';
 import { setAgentBinding } from './providers/bindings.mjs';
 import { expireAllPending } from './review.mjs';
+import { loadSecretsIntoEnv } from './secrets.mjs';
 import { ensureDirs, paths, readJson, resolveDataRoot, writeJson } from './paths.mjs';
 
 const DEFAULT_SETTINGS = {
@@ -34,6 +35,9 @@ const DEFAULT_SETTINGS = {
 };
 
 export function createHost({ root = resolveDataRoot(), env = process.env, log = () => {}, seed = true } = {}) {
+  // Keys stored by the desktop app (or `mgb secrets`) live in <root>/secrets/env.json.
+  // Load them before anything resolves a binding, so every entry point behaves the same.
+  loadSecretsIntoEnv(root);
   const p = paths(root);
   ensureDirs(p);
 
@@ -122,7 +126,7 @@ export function bootstrap({ root = resolveDataRoot(), botName = 'Main Bot', mode
       host.roster.create({
         name: botName,
         description: 'Coordinates the other bots and takes the work you hand it directly.',
-        title: 'Chief of staff',
+        title: '幕僚长',
         avatarColor: 'green',
       }),
     ];

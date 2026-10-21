@@ -118,10 +118,39 @@
   #app.no-rail .agent { justify-content: center; }
 
   /* ---------- left rail: roster ---------- */
+  /* ---------- desktop shell (Electron) ----------
+     titleBarStyle: hiddenInset puts the traffic lights at x=14/y=16, which landed on
+     top of the brand. Reserve that band and make the header a window drag region. */
+  .desktop-mac .rail-head { padding-top: 30px; -webkit-app-region: drag; }
+  .desktop-mac .rail-head .brand { -webkit-app-region: no-drag; }
+  .desktop-mac .rail-head .icon-btn { -webkit-app-region: no-drag; }
+  .desktop-mac .chat-head { -webkit-app-region: drag; }
+  .desktop-mac .chat-head .pill,
+  .desktop-mac .chat-head .icon-btn { -webkit-app-region: no-drag; }
+  .desktop-mac .rail-foot { -webkit-app-region: no-drag; }
+  /* With the rail folded away the chat header starts at x=0, so the traffic lights would
+     land on its buttons. Reserve the same band there. */
+  @media (max-width: 820px) {
+    .desktop-mac .chat-head { padding-inline-start: 78px; }
+  }
+
   .rail { background: var(--rail); border-right: 1px solid var(--line);
     display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
   .rail-head { padding: 12px 14px 8px; display: flex; align-items: center; gap: 8px; }
-  .rail-head .brand { font-weight: 650; font-size: 13px; letter-spacing: .2px; flex: 1; }
+  /* Wordmark: a small accent mark plus a heavy, tightly tracked name — the only place
+     in the rail that carries brand weight, so it reads as identity rather than a label. */
+  .rail-head .brand { display: flex; align-items: center; gap: 8px; flex: 1;
+    font-weight: 800; font-size: 17px; letter-spacing: -.3px; color: var(--text);
+    line-height: 1; }
+  .rail-head .brand .mark { flex: none; width: 20px; height: 20px; border-radius: 7px;
+    background: linear-gradient(145deg, var(--accent) 0%, #7aa2ff 100%);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent);
+    position: relative; }
+  .rail-head .brand .mark::after { content: ''; position: absolute; inset: 0;
+    background:
+      radial-gradient(circle at 34% 45%, #fff 1.5px, transparent 1.8px),
+      radial-gradient(circle at 66% 45%, #fff 1.5px, transparent 1.8px);
+    }
   /* The generic button rule adds padding; a grid button must own its box or the glyph
      sits low. line-height:0 + place-items:center keeps "+" optically centred. */
   .icon-btn { width: 26px; height: 26px; display: inline-grid; place-items: center;
@@ -130,13 +159,91 @@
     font-size: 15px; line-height: 0; font-weight: 500; }
   .icon-btn:hover { border-color: var(--line-strong); }
   .search { margin: 0 10px 8px; position: relative; }
-  .search input { width: 100%; padding: 6px 10px 6px 28px; border-radius: 8px;
+  .search input { width: 100%; box-sizing: border-box;
+    padding: 6px 30px 6px 28px; border-radius: 8px;
     border: 1px solid var(--line); background: var(--surface); color: var(--text);
     font: inherit; font-size: 12.5px; outline: none; }
   .search input:focus { border-color: var(--accent); }
+  /* Clear button: only present while there is a query. */
+  .search .sclear { position: absolute; inset-inline-end: 6px; top: 50%;
+    transform: translateY(-50%); width: 20px; height: 20px; border-radius: 50%;
+    border: 0; padding: 0; cursor: pointer; display: none; place-items: center;
+    background: var(--line-strong); color: var(--surface); font-size: 10px;
+    line-height: 0; }
+  .search .sclear:hover { background: var(--dim); }
+  .search.has-q .sclear { display: grid; }
+  .search input:focus { border-color: var(--accent); }
   .search svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
     width: 13px; height: 13px; color: var(--faint); pointer-events: none; }
-  #agents { overflow: auto; padding: 0 8px 10px; flex: 1; }
+  #agents { overflow: auto; padding: 8px 8px 10px; flex: 1; }
+
+  /* Transcript matches under the roster. */
+  .hitsec { padding: 10px 10px 4px; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .4px; color: var(--faint); }
+  .hit { display: flex; flex-direction: column; gap: 2px; padding: 8px;
+    border-radius: 9px; cursor: pointer; min-width: 0; }
+  .hit:hover { background: var(--rail-hover); }
+  .hit .hmeta { display: flex; gap: 6px; align-items: baseline; font-size: 10.5px;
+    color: var(--faint); }
+  .hit .hbot { font-weight: 600; color: var(--dim); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .hit .htime { margin-inline-start: auto; flex: none; }
+  .hit .htext { font-size: 12px; color: var(--dim); line-height: 1.45;
+    overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; }
+  .flash { animation: entryflash 1.8s ease-out; }
+  @keyframes entryflash {
+    0%   { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+    70%  { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+    100% { background: transparent; }
+  }
+  .hit mark { background: color-mix(in srgb, var(--accent) 26%, transparent);
+    color: inherit; border-radius: 3px; padding: 0 1px; }
+  /* Avatars are an SVG silhouette on a transparent box — no tile behind them. */
+  .avatar { display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border-radius: 0; line-height: 0; flex: none; }
+  .avatar svg { width: 100%; height: 100%; display: block; }
+
+  /* ---------- main bot (hero) ---------- */
+  /* The main bot sits in its own band: centred avatar, name, a short role pill, then a
+     hairline before the roster starts. */
+  #hero { padding: 10px; border-bottom: 1px solid var(--line); }
+  /* No chief of staff: no pinned band and no divider either. */
+  #hero:empty { display: none; }
+  .hero { display: flex; align-items: center; gap: 10px;
+    padding: 8px; border-radius: 12px; cursor: pointer;
+    transition: background-color .15s ease; }
+  .hero:hover { background: var(--rail-hover); }
+  .hero.active { background: var(--rail-active); }
+  /* Compact: a row like the roster below it, just visually promoted. */
+  .hero .hmeta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .hero .hname { font-size: 14px; font-weight: 650; color: var(--text);
+    letter-spacing: -.1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hero .hbadge { font-size: 11px; color: var(--dim);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .avatar.big svg { width: 100%; height: 100%; }
+
+  /* A group reads as a tight cluster of overlapping member avatars, the way a chat app
+     shows a room. Cells are absolutely placed circles at ~58% so they overlap by ~16%;
+     a ring in the rail colour keeps them visually separate. */
+  .avatar.group { position: relative; background: transparent; padding: 0;
+    border-radius: 0; overflow: visible; }
+  .avatar.group .gcell { position: absolute; width: 60%; height: 60%;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; overflow: visible; }
+  .avatar.group .gcell .avatar { display: block; }
+
+  .avatar.group.n1 .gcell { width: 92%; height: 92%; left: 4%; top: 4%; font-size: 14px; }
+  .avatar.group.n2 .gcell:nth-child(1) { left: 2%;  top: 21%; }
+  .avatar.group.n2 .gcell:nth-child(2) { right: 2%; top: 21%; }
+  .avatar.group.n3 .gcell:nth-child(1) { left: 2%;  top: 2%; }
+  .avatar.group.n3 .gcell:nth-child(2) { right: 2%; top: 2%; }
+  .avatar.group.n3 .gcell:nth-child(3) { left: 21%; bottom: 2%; }
+  .avatar.group.n4 .gcell:nth-child(1) { left: 2%;  top: 2%; }
+  .avatar.group.n4 .gcell:nth-child(2) { right: 2%; top: 2%; }
+  .avatar.group.n4 .gcell:nth-child(3) { left: 2%;  bottom: 2%; }
+  .avatar.group.n4 .gcell:nth-child(4) { right: 2%; bottom: 2%; }
+
   .agent { display: flex; gap: 10px; align-items: center; padding: 9px 8px;
     border-radius: 9px; cursor: pointer; }
   .agent:hover { background: rgba(0,0,0,.035); }
@@ -462,6 +569,116 @@
     border-color: color-mix(in srgb, var(--err) 35%, var(--line-strong)); }
   .card.approval .cf button[data-a="denied"]:hover { background: color-mix(in srgb, var(--err) 8%, transparent); }
   /* resolved state is a quiet note, not a button-sized grey bar */
+  /* Full-width actions at the bottom of a pane. */
+  .bigbtn { display: flex; align-items: center; justify-content: center; gap: 6px;
+    width: 100%; height: 34px; margin-top: 10px; border-radius: 9px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--surface);
+    color: var(--text); font: inherit; font-size: 12.5px; font-weight: 500;
+    transition: background-color .15s ease, border-color .15s ease; }
+  .bigbtn:hover { background: var(--surface-2); border-color: var(--faint); }
+  .bigbtn.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  .bigbtn.primary:hover { filter: brightness(1.06); }
+  .entry.role .m { color: var(--dim); font-size: 12px; }
+
+  /* Modal form (replaces window.prompt, which Electron does not implement). */
+  .askdlg { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.34);
+    display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .ask-card { width: min(360px, 94vw); background: var(--surface); border-radius: 14px;
+    border: 1px solid var(--line-strong); box-shadow: 0 20px 60px rgba(0,0,0,.3);
+    overflow: hidden; }
+  .ask-head { padding: 14px 16px; font-size: 14px; font-weight: 600;
+    border-bottom: 1px solid var(--line); }
+  .ask-body { padding: 12px 16px; display: grid; gap: 10px; }
+  .ask-row { display: grid; gap: 5px; font-size: 12px; color: var(--dim); }
+  .ask-row input, .ask-row textarea { width: 100%; box-sizing: border-box;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+    color: var(--text); font: inherit; font-size: 12.5px; padding: 7px 9px; outline: none;
+    resize: vertical; }
+  .ask-row input:focus, .ask-row textarea:focus { border-color: var(--accent);
+    background: var(--surface); }
+  .ask-foot { display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 16px; border-top: 1px solid var(--line); }
+  .sf-act, .ask-foot .s-act { height: 30px; padding: 0 14px; border-radius: 8px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+    font: inherit; font-size: 12.5px; cursor: pointer; }
+  .ask-foot .s-act:hover { background: var(--surface-2); }
+  .ask-foot .s-act.primary { background: var(--accent); border-color: transparent;
+    color: #fff; }
+  .ask-foot .s-act.primary:hover { filter: brightness(1.06); background: var(--accent); }
+
+  /* Details pane avatar block + editor dialog. */
+  .avedit .ave-card { background: var(--surface); border-radius: 14px; padding: 16px;
+    width: min(340px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.28);
+    border: 1px solid var(--line-strong); }
+  .avsec { display: flex; justify-content: center; padding: 12px 0 14px; }
+  .avsec .avwrap { position: relative; display: inline-flex; }
+  .avsec .avatar.xl { width: 64px; height: 64px; border-radius: 22px; font-size: 24px;
+    cursor: pointer; }
+  /* The edit affordance only exists while the pointer is over the avatar. */
+  .avsec .avedit-btn { position: absolute; right: -6px; bottom: -6px;
+    width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--rail);
+    background: var(--accent); color: #fff; font-size: 12px; line-height: 1;
+    display: grid; place-items: center; cursor: pointer; padding: 0;
+    opacity: 0; transform: scale(.8); pointer-events: none;
+    transition: opacity .14s ease, transform .14s ease; }
+  .avsec .avwrap:hover .avedit-btn { opacity: 1; transform: scale(1); pointer-events: auto; }
+  .avsec .avatar.xl:hover { filter: brightness(1.05); }
+  .avedit { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.32);
+    display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .ave-preview { display: flex; justify-content: center; padding: 4px 0 12px; }
+  .ave-preview .avatar.xl { width: 64px; height: 64px; border-radius: 22px; font-size: 24px; }
+  .ave-row { display: flex; align-items: center; gap: 12px; padding: 8px 0;
+    font-size: 12.5px; color: var(--dim); }
+  .ave-row > span { flex: none; width: 64px; }
+  .ave-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .ave-tabs button { border: 0; background: transparent; font: inherit; font-size: 13px;
+    color: var(--dim); padding: 7px 10px; border-radius: 9px 9px 0 0; cursor: pointer; }
+  .ave-tabs button.on { background: var(--surface-2); color: var(--text); font-weight: 600; }
+  .ave-tabs .sp { flex: 1; }
+  .ave-tabs button.reset { font-size: 12px; color: var(--faint); }
+  .ave-tabs button.reset:hover { color: var(--err); }
+  .ave-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 4px 0 12px; }
+  .ave-shape { aspect-ratio: 1; border: 2px solid transparent; border-radius: 12px;
+    background: transparent; cursor: pointer; padding: 3px; display: grid; place-items: center; }
+  .ave-shape:hover { background: var(--surface-2); }
+  .ave-shape.on { border-color: var(--accent); background: var(--surface-2); }
+  .ave-shape .avatar { width: 100%; height: 100%; }
+  .ave-colors { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; flex: 1; }
+  .ave-sw { width: 24px; height: 24px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; padding: 0; }
+  .ave-sw.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--surface) inset; }
+  .ave-upload { display: grid; gap: 8px; padding: 8px 0 12px; }
+  .ave-upload input[type="file"] { font-size: 12px; color: var(--dim); }
+  .ave-row select, .ave-row input { flex: 1; height: 28px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
+    font: inherit; font-size: 12.5px; padding: 0 8px; outline: none; }
+  .ave-foot { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; }
+
+  /* Double-click editable fields in the details pane. */
+  .sec .hintx { margin-inline-start: auto; font-size: 10px; font-weight: 500;
+    color: var(--faint); text-transform: none; letter-spacing: 0; }
+  /* Both fields reserve a block of space in read mode, and the editor is pinned to the
+     measured height when it opens — entering edit mode must not shift the layout. */
+  .entry.desc .m { min-height: 54px; }
+  .entry .m.editable { display: block; cursor: text; border-radius: 6px;
+    padding: 2px 4px; margin: -2px -4px; white-space: pre-wrap; }
+  .entry .m.editable:hover { background: var(--surface-2); }
+  /* Tall enough to read a real memory file without dominating the pane. */
+  .entry.mem .m { min-height: 240px; max-height: min(42vh, 420px); overflow-y: auto;
+    scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.18) transparent; }
+
+  /* The text under the overlay must not show through the editor. */
+  .editing > *:not(.inline-edit) { visibility: hidden; }
+  /* Entering edit mode must not move anything: zero border and padding, a focused
+     outline instead of a border, and the box pinned to the measured size in JS. */
+  /* Absolutely positioned inside the field it replaces, so it cannot change the box it
+     sits in — no width reflow, no scrollbar, no row growth. */
+  .inline-edit { position: absolute; inset: 0; box-sizing: border-box;
+    border: 0; padding: 0; margin: 0; background: transparent; color: inherit;
+    font: inherit; line-height: inherit; box-shadow: inset 0 0 0 2px var(--accent);
+    border-radius: 4px; resize: none; overflow: auto; }
+  .editing { position: relative; }
+
   .card .cf .resolved { font-size: 12px; color: var(--faint); display: inline-flex;
     align-items: center; gap: 6px; }
 
@@ -746,7 +963,10 @@
   /* ---------- settings panel (Telegram-style) ----------
      Rows are full-bleed list items with a hairline divider, label on the left and the
      value/control pinned right. Section headers are small, uppercase and quiet. */
-  #settingsPanel .panel.settings { width: min(780px, 94vw); max-height: 82vh;
+  /* Settings is a dialog: centred both ways, unlike the command palette which hangs
+     from the top like a search field. */
+  #settingsPanel { align-items: center; justify-content: center; padding: 24px; }
+  #settingsPanel .panel.settings { width: min(780px, 94vw); max-height: min(82vh, 720px);
     display: flex; flex-direction: column; }
   /* Two columns: a section nav on the left, the active section on the right. */
   .settings .s-main { display: grid; grid-template-columns: 172px minmax(0, 1fr);
@@ -779,15 +999,18 @@
     border-radius: 13px; border: 1px solid var(--line); background: var(--surface-2);
     color: var(--dim); font-size: 12px; cursor: pointer; }
   .settings .s-close:hover { color: var(--text); border-color: var(--line-strong); }
-  .settings .s-body { overflow-y: auto; padding: 4px 0 10px;
+  .settings .s-body { overflow-y: auto; padding: 4px 0 10px; position: relative;
     scrollbar-width: thin; scrollbar-color: rgba(0,0,0,.18) transparent; }
   .settings .s-body::-webkit-scrollbar { width: 8px; }
   .settings .s-body::-webkit-scrollbar-thumb {
     background: rgba(0,0,0,.16); border-radius: 8px;
     border: 2px solid transparent; background-clip: content-box; }
-  .settings .s-sec { padding: 16px 16px 6px; font-size: 11.5px; font-weight: 600;
+  .settings .s-group { position: static; }
+  .settings .s-sec { position: sticky; top: 0; z-index: 1;
+    padding: 14px 16px 6px; font-size: 11.5px; font-weight: 600;
     letter-spacing: .3px; color: var(--accent); text-transform: none; margin: 0;
-    background: transparent; }
+    background: var(--surface); border-bottom: 1px solid var(--line); }
+  .settings .s-sec:first-child { padding-top: 12px; }
   .settings .s-row { display: flex; align-items: center; gap: 12px;
     padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px;
     color: var(--text); background: transparent; }
@@ -796,12 +1019,28 @@
   .settings .s-label { flex: 1 1 auto; min-width: 0; display: block; }
   .settings .s-desc { display: block; font-size: 11.5px; color: var(--faint);
     margin-top: 2px; line-height: 1.35; }
-  .settings .s-row select, .settings .s-row input[type="text"] {
-    flex: none; height: 30px; padding: 0 8px; border-radius: 8px;
+  /* One control style for every row: same height, radius, border, background and focus
+     ring. A fixed width column keeps the right edge aligned across rows. */
+  .settings .s-row input:not([type="checkbox"]),
+  .settings .s-row select {
+    flex: none; width: 200px; max-width: 200px; height: 30px; box-sizing: border-box;
+    padding: 0 10px; border-radius: 8px;
     border: 1px solid var(--line); background: var(--surface-2); color: var(--text);
-    font: inherit; font-size: 12.5px; outline: none; max-width: 170px; }
-  .settings .s-row select:focus, .settings .s-row input:focus {
-    border-color: var(--accent); background: var(--surface); }
+    font: inherit; font-size: 12.5px; line-height: 28px; outline: none;
+    transition: border-color .15s ease, background-color .15s ease, box-shadow .15s ease;
+    -webkit-appearance: none; appearance: none; }
+  .settings .s-row select {
+    padding-inline-end: 26px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center; }
+  .settings .s-row input:not([type="checkbox"]):hover,
+  .settings .s-row select:hover { border-color: var(--line-strong); }
+  .settings .s-row input:not([type="checkbox"]):focus,
+  .settings .s-row select:focus {
+    border-color: var(--accent); background: var(--surface);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+  .settings .s-row input::placeholder { color: var(--faint); }
+  .settings .s-row input:disabled, .settings .s-row select:disabled { opacity: .55; }
   /* Telegram-style switch for boolean rows. */
   .settings .s-switch { flex: none; width: 42px; height: 26px; border-radius: 13px;
     border: 0; padding: 0; cursor: pointer; position: relative;
@@ -862,8 +1101,10 @@
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
         <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/>
       </svg>
-      <input id="search" placeholder="搜索 bot" />
+      <input id="search" placeholder="搜索 bot 或消息" />
+      <button class="sclear" id="searchClear" title="清除搜索" aria-label="清除搜索">✕</button>
     </div>
+    <div id="hero"></div>
     <div id="agents"></div>
     <div class="rail-foot">
       <div class="rail-item" id="openPlugins">插件</div>
@@ -874,7 +1115,7 @@
   <main>
     <header class="chat-head">
       <button class="icon-btn" id="toggleRail" title="显示 bot 列表" style="display:none">☰</button>
-      <div class="avatar" id="headAvatar" style="width:28px;height:28px;border-radius:8px;font-size:10px"></div>
+      <span id="headAvatar"></span>
       <div style="min-width:0">
         <div class="title" id="title">—</div>
         <div class="sub" id="subtitle"></div>
@@ -947,9 +1188,12 @@ let uimap = null;
 let commands = [];
 let activeTab = 'overview';
 let searchQuery = '';
+let searchHits = [];      // transcript matches for the rail search
+let searchHitsFor = '';   // the query those hits belong to
 let hostStatus = {};
 let routines = [];
 let reviewRules = {};
+let hostSettings = {};
 let pendingIds = new Set();
 // DSH folds a finished turn's process only once the reader moves on: the newest turn
 // stays open, and sending anything collapses it. Keyed by turnId.
@@ -964,9 +1208,84 @@ const settledTurns = new Set();
 // under the nonce is re-keyed in place once the row lands (tweb does the same).
 const changedMids = new Map();
 
-const COLORS = ['#7c5cff', '#2f9bff', '#19b57a', '#e8733f', '#e0457b', '#8b6b4a', '#f0a020', '#4aa8c0'];
-const colorFor = (id) => COLORS[[...String(id || '')].reduce((a, c) => a + c.charCodeAt(0), 0) % COLORS.length];
+// Twelve hues, ordered so neighbouring entries contrast. Assignment is by position in
+// the roster, not by hashing the id — a hash made unrelated bots collide on the same hue.
+const COLORS = [
+  '#2f6fed', '#19b57a', '#e8941e', '#e0457b', '#7c5cff', '#12b5c9',
+  '#e8733f', '#8b6b4a', '#3f4a5a', '#c2334d', '#5aa02f', '#b04fd0',
+];
+const colorForIndex = (i) => COLORS[Math.abs(Number(i) || 0) % COLORS.length];
+const agentIndex = (id) => {
+  const i = agents.findIndex((a) => a.id === id);
+  return i < 0 ? 0 : i;
+};
+const colorFor = (id) => colorForIndex(agentIndex(id));
 const initialOf = (name) => (name || '?').trim().slice(0, 1).toUpperCase();
+
+// Avatar silhouettes (viewBox 0 0 100 100). The box itself is transparent: only the
+// shape is painted, so avatars float on the surface instead of sitting in a tile.
+const AVATAR_SHAPES = {
+  circle:   '<circle cx="50" cy="50" r="45"/>',
+  squircle: '<rect x="6" y="6" width="88" height="88" rx="30"/>',
+  blob:     '<path d="M50 5c24 0 46 16 46 44 0 30-22 46-46 46S4 79 4 49C4 21 26 5 50 5Z"/>',
+  diamond:  '<rect x="15" y="15" width="70" height="70" rx="20" transform="rotate(45 50 50)"/>',
+  flower:   '<path d="M50 9c9 0 13 7 18 10s17 1 21 9-4 14-4 19 8 10 4 18-15 5-21 8-9 13-18 13-13-10-18-13-17 0-21-8 4-13 4-18-8-10-4-18 15-5 21-8 9-12 18-12Z"/>',
+  drop:     '<path d="M50 4c16 22 35 34 35 53a35 35 0 0 1-70 0C15 38 34 26 50 4Z"/>',
+  pill:     '<rect x="5" y="26" width="90" height="48" rx="24"/>',
+  triangle: '<path d="M50 8 92 82a9 9 0 0 1-8 13H16a9 9 0 0 1-8-13Z"/>',
+  pentagon: '<path d="M50 5 95 37 78 90H22L5 37Z"/>',
+  hexagon:  '<path d="M50 4 91 27v46L50 96 9 73V27Z"/>',
+  shield:   '<path d="M50 4 92 20v32c0 26-19 39-42 46-23-7-42-20-42-46V20Z"/>',
+  heart:    '<path d="M50 92C20 73 5 57 5 37 5 21 17 10 31 10c8 0 15 4 19 11 4-7 11-11 19-11 14 0 26 11 26 27 0 20-15 36-45 55Z"/>',
+};
+const AVATAR_SHAPE_IDS = Object.keys(AVATAR_SHAPES);
+const SHAPE_ALIASES = { rounded: 'squircle', square: 'squircle' };
+
+function avatarShapeOf(agent) {
+  const raw = agent?.avatarShape ?? 'circle';
+  const id = SHAPE_ALIASES[raw] ?? raw;
+  return AVATAR_SHAPES[id] ? id : 'circle';
+}
+
+// Render an avatar as inline SVG. `size` only sets the CSS box.
+// `outline` draws a ring in the surface colour behind the fill, which is what keeps
+// overlapping avatars readable in a group cluster.
+function avatarHTML(agent, size, extraClass = '', outline = false) {
+  const color = agent?.avatarColor || colorFor(agent?.id);
+  const shape = AVATAR_SHAPES[avatarShapeOf(agent)];
+  const glyph = String(agent?.avatarGlyph ?? '').trim();
+  // Face content: a custom glyph when set, otherwise the default pair of eyes.
+  const eyes = glyph
+    ? `<text x="50" y="50" text-anchor="middle" dominant-baseline="central"
+         font-size="${glyph.length > 1 ? 34 : 44}" font-weight="700" fill="#fff"
+         font-family="-apple-system, system-ui, sans-serif">${esc(glyph)}</text>`
+    : (size && size < 22
+        ? ''
+        : '<rect x="33" y="41" width="10" height="21" rx="5" fill="#fff" opacity=".95"/>'
+          + '<rect x="57" y="41" width="10" height="21" rx="5" fill="#fff" opacity=".95"/>');
+  const cls = `avatar${extraClass ? ' ' + extraClass : ''}`;
+  const style = size ? ` style="width:${size}px;height:${size}px"` : '';
+  // paint-order:stroke paints the ring under the fill, so only its outer half shows —
+  // that is what separates overlapping avatars in a group cluster.
+  const ring = outline
+    ? ' stroke="var(--surface)" stroke-width="7" stroke-linejoin="round" paint-order="stroke"'
+    : '';
+  // Every silhouette is drawn 0..100, and the ring adds 3.5 units outward, so the group
+  // is scaled to 0.9 around the centre — otherwise the edges clip at the viewBox.
+  return `<span class="${cls}"${style}>`
+    // The transform wraps the face too: scaling only the silhouette made the eyes look
+    // oversized inside a shrunken shape.
+    + '<svg viewBox="0 0 100 100" aria-hidden="true">'
+    + '<g transform="translate(50 50) scale(.9) translate(-50 -50)">'
+    + `<g fill="${color}"${ring}>${shape}</g>`
+    + eyes
+    + '</g></svg></span>';
+}
+
+// Per-agent appearance overrides live in the profile: avatarColor / avatarShape / avatarGlyph.
+function avatarColorOf(agent, fallbackId) {
+  return agent?.avatarColor || colorFor(agent?.id ?? fallbackId);
+}
 const esc = (s) => String(s ?? '');
 
 async function rpc(method, args = {}) {
@@ -1043,20 +1362,104 @@ function annotateGroups(list) {
 }
 
 /* ---------- rendering ---------- */
+// A group's avatar is a 2x2 cluster of its members' colours, which is how the real
+// panel distinguishes a room from a single bot at a glance.
+function groupAvatar(memberIds, size = 40) {
+  const ids = (memberIds ?? []).slice(0, 4);
+  if (!ids.length) {
+    return `<span class="avatar group n1" style="width:${size}px;height:${size}px">`
+      + `<span class="gcell" style="background:${colorFor('group')}">☰</span></span>`;
+  }
+  const inner = ids.map((id) => {
+    const a = agents.find((x) => x.id === id);
+    const cellSize = Math.round(size * 0.62);
+    return `<span class="gcell">${a ? avatarHTML(a, cellSize, '', true) : ''}</span>`;
+  }).join('');
+  return `<span class="avatar group n${ids.length}" style="width:${size}px;height:${size}px">${inner}</span>`;
+}
+
 function renderRoster() {
   const box = $('agents');
+  const hero = $('hero');
   box.innerHTML = '';
+  if (hero) hero.innerHTML = '';
+
   const q = searchQuery.toLowerCase();
-  const list = agents.filter((a) => !q || `${a.name} ${a.description}`.toLowerCase().includes(q));
-  if (!list.length) {
-    box.innerHTML = `<div class="empty" style="padding:18px 10px">${agents.length ? '没有匹配的 bot' : '还没有 bot'}</div>`;
-    return;
+  const mainId = hostSettings?.mainAgentId ?? null;
+  // No chief of staff: nothing is pinned, the whole roster is one list.
+  const main = mainId ? (agents.find((a) => a.id === mainId) ?? null) : null;
+  const rest = agents.filter((a) => a.id !== main?.id);
+  const list = rest.filter((a) => !q || `${a.name} ${a.description}`.toLowerCase().includes(q));
+
+  // Hero: the main bot, pinned above the list and excluded from it.
+  if (hero && main && !q) {
+    const el = document.createElement('div');
+    el.className = `hero${main.id === activeId ? ' active' : ''}`;
+    // Seeded profiles from earlier versions carry the English role name.
+    const TITLES = { 'Chief of staff': '幕僚长' };
+    const rawTitle = main.title ? (TITLES[main.title] ?? main.title) : '';
+    const badge = rawTitle || (main.isGroup ? '群聊' : '');
+    el.innerHTML = `
+      ${main.isGroup ? groupAvatar(main.memberIds, 52) : avatarHTML(main, 52, 'big')}
+      <span class="hmeta"><span class="hname"></span>${badge ? '<span class="hbadge"></span>' : ''}</span>`;
+    el.querySelector('.hname').textContent = main.name;
+    if (badge) el.querySelector('.hbadge').textContent = badge;
+    el.onclick = () => selectAgent(main.id);
+    el.oncontextmenu = (ev) => {
+      ev.preventDefault();
+      setChiefOfStaff(main, {
+        isMain: true,
+        holder: null,
+        mainId: hostSettings?.mainAgentId ?? null,
+      });
+    };
+    hero.appendChild(el);
   }
+
+  if (!list.length) {
+    if (!q) return; // nothing but the hero: no empty-state noise
+    if (!searchHits.length) {
+      box.innerHTML = `<div class="empty" style="padding:18px 10px">没有匹配的 bot 或消息</div>`;
+      return;
+    }
+  }
+
+  // Message hits appear under the bots while a query is active.
+  const renderHits = () => {
+    if (!q || searchHitsFor !== searchQuery.trim() || !searchHits.length) return;
+    const head = document.createElement('div');
+    head.className = 'hitsec';
+    head.textContent = `消息记录 · ${searchHits.length}`;
+    box.appendChild(head);
+    for (const h of searchHits) {
+      const el = document.createElement('div');
+      el.className = 'hit';
+      el.innerHTML = `<span class="hmeta"><span class="hbot"></span><span class="htime"></span></span><span class="htext"></span>`;
+      el.querySelector('.hbot').textContent = h.agentName ?? '';
+      el.querySelector('.htime').textContent = h.timestampMs ? fmtTime(h.timestampMs) : '';
+      const txt = el.querySelector('.htext');
+      const needle = searchQuery.trim();
+      const i = String(h.snippet ?? '').toLowerCase().indexOf(needle.toLowerCase());
+      if (i >= 0) {
+        txt.append(document.createTextNode(h.snippet.slice(0, i)));
+        const mk = document.createElement('mark');
+        mk.textContent = h.snippet.slice(i, i + needle.length);
+        txt.append(mk, document.createTextNode(h.snippet.slice(i + needle.length)));
+      } else txt.textContent = h.snippet ?? '';
+      el.onclick = () => { selectAgent(h.agentId); };
+      el.ondblclick = () => { jumpToEntry(h.agentId, h.entryId); };
+      el.title = '单击切换 bot，双击跳到这条消息';
+      box.appendChild(el);
+    }
+  };
+
   for (const a of list) {
     const el = document.createElement('div');
     el.className = `agent${a.id === activeId ? ' active' : ''}`;
     el.innerHTML = `
-      <span class="avatar" style="background:${colorFor(a.id)}${a.isGroup ? ';border-radius:50%' : ''}">${a.isGroup ? '☰' : initialOf(a.name)}</span>
+      ${a.isGroup
+        ? groupAvatar(a.memberIds, 40)
+        : avatarHTML(a, 40)}
       <span class="meta">
         <span class="row1"><span class="name"></span><span class="time"></span></span>
         <span class="sub"></span>
@@ -1067,7 +1470,224 @@ function renderRoster() {
     el.onclick = () => selectAgent(a.id);
     box.appendChild(el);
   }
+  renderHits();
 }
+
+// Avatar editor: silhouette + face (eyes or a glyph) + colour. Tabs mirror the real
+// panel: pick from the built-in set, randomise, or upload an image.
+function openAvatarEditor(agent) {
+  if (!agent) return;
+  const cur = {
+    color: agent.avatarColor || colorFor(agent.id),
+    shape: avatarShapeOf(agent),
+    glyph: String(agent.avatarGlyph ?? '').trim(),
+    image: agent.avatarImage ?? '',
+  };
+  let draft = { ...cur };
+  let tab = 'bot';
+
+  const wrap = document.createElement('div');
+  wrap.className = 'avedit';
+  wrap.innerHTML = `
+    <div class="ave-card">
+      <div class="ave-preview"><span data-p></span></div>
+      <div class="ave-tabs">
+        <button data-tab="bot" class="on">Bot</button>
+        <button data-tab="gen">生成</button>
+        <button data-tab="up">上传</button>
+        <span class="sp"></span>
+        <button class="reset" data-reset>重置</button>
+      </div>
+      <div data-pane></div>
+      <div class="ave-foot">
+        <button class="s-act" data-cancel>取消</button>
+        <button class="s-act" data-save>保存</button>
+      </div>
+    </div>`;
+  document.body.appendChild(wrap);
+
+  const preview = wrap.querySelector('[data-p]');
+  const pane = wrap.querySelector('[data-pane]');
+  const paintPreview = () => {
+    preview.innerHTML = draft.image
+      ? `<span class="avatar xl"><img src="${draft.image}" alt="" style="width:100%;height:100%;object-fit:contain"/></span>`
+      : avatarHTML({ ...agent, ...draft, avatarGlyph: draft.glyph }, 72, 'xl');
+  };
+
+  const renderEditor = () => {
+    for (const b of wrap.querySelectorAll('.ave-tabs button[data-tab]')) {
+      b.classList.toggle('on', b.dataset.tab === tab);
+    }
+    pane.innerHTML = '';
+    if (tab === 'bot') {
+      const grid = document.createElement('div');
+      grid.className = 'ave-grid';
+      for (const id of AVATAR_SHAPE_IDS) {
+        const b = document.createElement('button');
+        b.className = 'ave-shape' + (id === draft.shape ? ' on' : '');
+        b.innerHTML = avatarHTML({ ...agent, ...draft, avatarShape: id, avatarImage: '' }, 38);
+        b.title = id;
+        b.onclick = () => { draft.shape = id; draft.image = ''; renderEditor(); paintPreview(); };
+        grid.appendChild(b);
+      }
+      pane.appendChild(grid);
+
+      const colors = document.createElement('div');
+      colors.className = 'ave-colors';
+      for (const c of COLORS) {
+        const b = document.createElement('button');
+        b.className = 'ave-sw' + (c === draft.color ? ' on' : '');
+        b.style.background = c;
+        b.onclick = () => {
+          draft.color = c;
+          colors.querySelectorAll('.ave-sw').forEach((x) => x.classList.toggle('on', x === b));
+          paintPreview();
+        };
+        colors.appendChild(b);
+      }
+      pane.appendChild(colors);
+
+      const glyphRow = document.createElement('div');
+      glyphRow.className = 'ave-row';
+      glyphRow.innerHTML = `<span>文字</span><input data-glyph maxlength="2" value="${esc(draft.glyph)}" placeholder="留空显示眼睛" />`;
+      glyphRow.querySelector('input').oninput = (e) => {
+        draft.glyph = e.target.value.slice(0, 2);
+        paintPreview();
+      };
+      pane.appendChild(glyphRow);
+    } else if (tab === 'gen') {
+      const box = document.createElement('div');
+      box.className = 'ave-upload';
+      box.innerHTML = '<div style="font-size:12px;color:var(--faint)">随机组合：形状 + 颜色</div>';
+      const btn = document.createElement('button');
+      btn.className = 's-act';
+      btn.textContent = '换一组';
+      btn.onclick = () => {
+        draft.shape = AVATAR_SHAPE_IDS[Math.floor(Math.random() * AVATAR_SHAPE_IDS.length)];
+        draft.color = COLORS[Math.floor(Math.random() * COLORS.length)];
+        draft.image = '';
+        paintPreview();
+        box.querySelector('.gen-out').innerHTML = avatarHTML({ ...agent, ...draft }, 64, 'xl');
+      };
+      const out = document.createElement('div');
+      out.className = 'gen-out';
+      out.style.cssText = 'display:flex;justify-content:center;padding:8px 0';
+      out.innerHTML = avatarHTML({ ...agent, ...draft }, 64, 'xl');
+      box.appendChild(btn);
+      box.appendChild(out);
+      pane.appendChild(box);
+    } else {
+      const box = document.createElement('div');
+      box.className = 'ave-upload';
+      box.innerHTML = `<div style="font-size:12px;color:var(--faint)">上传 PNG / SVG，背景保持透明</div>
+        <input type="file" accept="image/*" data-file />`;
+      box.querySelector('[data-file]').onchange = (e) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        if (f.size > 256 * 1024) { $('status').textContent = '图片请小于 256KB'; return; }
+        const reader = new FileReader();
+        reader.onload = () => { draft.image = String(reader.result); paintPreview(); };
+        reader.readAsDataURL(f);
+      };
+      pane.appendChild(box);
+    }
+    paintPreview();
+  };
+
+  wrap.querySelectorAll('[data-tab]').forEach((b) => {
+    b.onclick = () => { tab = b.dataset.tab; renderEditor(); };
+  });
+  wrap.querySelector('[data-reset]').onclick = () => {
+    draft = { color: colorFor(agent.id), shape: 'circle', glyph: '', image: '' };
+    renderEditor();
+  };
+  const close = () => wrap.remove();
+  wrap.querySelector('[data-cancel]').onclick = close;
+  wrap.onclick = (e) => { if (e.target === wrap) close(); };
+  wrap.querySelector('[data-save]').onclick = async () => {
+    const patch = {
+      avatarColor: draft.color,
+      avatarShape: draft.shape,
+      avatarGlyph: draft.glyph,
+      ...(draft.image ? { avatarImage: draft.image } : {}),
+    };
+    if (!draft.image) patch.avatarImage = '';
+    try {
+      await rpc('updateAgent', { agentId: agent.id, patch });
+      Object.assign(agent, patch);
+      const a = agents.find((x) => x.id === agent.id);
+      if (a) Object.assign(a, patch);
+      close();
+      renderRoster();
+      renderEditor();
+      $('status').textContent = '图标已更新';
+    } catch (err) { $('status').textContent = `保存失败：${err.message}`; }
+  };
+
+  renderEditor();
+}
+
+// Open the bot (if needed) and scroll the given entry into view, then flash it.
+async function jumpToEntry(agentId, entryId) {
+  if (agentId !== activeId) await selectAgent(agentId);
+  // The transcript renders asynchronously after the switch; give it a beat, then retry
+  // a couple of times in case the row is not in the DOM yet.
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const el = document.querySelector(`[data-entry-id="${entryId}"]`);
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 1800);
+      $('status').textContent = '已定位到该消息';
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 120));
+  }
+  $('status').textContent = '这条消息不在当前视图（可能已被截断）';
+}
+
+// Promote or demote the chief-of-staff role. The title follows the role: the holder
+// gets 幕僚长, the previous holder loses it.
+async function setChiefOfStaff(agent, { isMain, holder, mainId }) {
+  if (!agent) return;
+  if (isMain) {
+    if (!confirm(`取消「${agent.name}」的幕僚长身份？\n\n取消后没有任何 bot 是幕僚长。`)) return;
+    try {
+      hostSettings = await rpc('setHostSettings', { patch: { mainAgentId: null } });
+      // Clear the title on every bot, not only the one that held it — a stale 幕僚长
+      // label on another bot would contradict the empty role.
+      for (const a of agents) {
+        if (a.title === '幕僚长') {
+          await rpc('updateAgent', { agentId: a.id, patch: { title: '' } }).catch(() => {});
+          a.title = '';
+        }
+      }
+      renderRoster(); renderPane();
+      $('status').textContent = '已取消幕僚长，当前没有幕僚长';
+    } catch (err) { $('status').textContent = err.message; }
+    return;
+  }
+  const msg = holder
+    ? `把幕僚长从「${holder}」换成「${agent.name}」？\n\n原来的幕僚长会恢复为普通 bot。`
+    : `把「${agent.name}」设为幕僚长？\n\n它会置顶在左栏，并带上「幕僚长」职衔。`;
+  if (!confirm(msg)) return;
+  try {
+    hostSettings = await rpc('setHostSettings', { patch: { mainAgentId: agent.id } });
+    await rpc('updateAgent', { agentId: agent.id, patch: { title: '幕僚长' } });
+    agent.title = '幕僚长';
+    if (mainId && mainId !== agent.id) {
+      const prev = agents.find((a) => a.id === mainId);
+      if (prev && prev.title === '幕僚长') {
+        await rpc('updateAgent', { agentId: prev.id, patch: { title: '' } }).catch(() => {});
+        prev.title = '';
+      }
+    }
+    renderRoster(); renderPane();
+    $('status').textContent = `${agent.name} 已设为幕僚长`;
+  } catch (err) { $('status').textContent = err.message; }
+}
+
+// Choose which bot is pinned as the main one (the hero at the top of the rail).
 
 function describeEvent(entry) {
   const ev = entry.event ?? {};
@@ -1608,6 +2228,9 @@ function renderTurnProcess(unit) {
     (e) => e.turnId === unit.turnId && e.kind === 'send-message' && e.message?.type === 'text'
       && String(e.message.content ?? '').trim(),
   );
+  // Only the newest turn can still be running. A turn that was interrupted, or whose
+  // answer never landed, used to look "进行中" forever because no answer row existed.
+  const isLatestTurn = unit.turnId === latestTurnId;
 
   // ONE process disclosure per turn. Reasoning, tool calls and peer notices are all
   // children of it, in the order they happened — a tool call is a step *inside* the
@@ -1617,7 +2240,7 @@ function renderTurnProcess(unit) {
 
   const reasoningRows = steps.filter((r) => r.kind === 'reasoning');
   const previewText = reasoningRows.map((r) => cleanText(r.text ?? '')).filter(Boolean).join('\n\n');
-  const running = !answered;
+  const running = isLatestTurn && !answered;
 
   const el = document.createElement('div');
   el.className = 'reasoning';
@@ -1749,6 +2372,23 @@ function renderPane() {
         <span class="k">执行位置</span><span data-f="harness"></span>
         <span class="k">编号</span><span data-f="id" style="word-break:break-all"></span>
       </div>`);
+    const nameEl = body.querySelector('[data-f="name"]');
+    if (nameEl && agent) {
+      makeEditable(nameEl, {
+        multiline: false,
+        placeholder: 'bot 名称',
+        save: async (value) => {
+          const next = value.trim();
+          if (!next) throw new Error('名称不能为空');
+          await rpc('updateAgent', { agentId: activeId, patch: { name: next } });
+          agent.name = next;
+          const a = agents.find((x) => x.id === activeId);
+          if (a) a.name = next;
+          $('title').textContent = next;
+          renderRoster();
+        },
+      });
+    }
     body.querySelectorAll('[data-f]').forEach((el) => {
       const f = el.dataset.f;
       el.textContent = f === 'name' ? esc(agent?.name)
@@ -1757,12 +2397,63 @@ function renderPane() {
         : f === 'harness' ? (agent?.harness === 'temporal' ? '服务端' : '本机')
         : esc(String(agent?.id ?? '').slice(0, 8));
     });
-    add(`<div class="sec">职责</div><div class="entry"><div class="m" data-desc></div></div>`);
-    body.querySelector('[data-desc]').textContent = agent?.description || '—';
-    add(`<div class="sec">记忆</div><div class="entry"><div class="m" data-mem>读取中…</div></div>`);
-    rpc('readMemory', { agentId: activeId })
-      .then((r) => { const el = body.querySelector('[data-mem]'); if (el) el.textContent = (r.memory || '（空）').slice(0, 1200); })
-      .catch(() => {});
+    add(`<div class="avsec">
+      <span class="avwrap">
+        <span class="avslot" data-av>${avatarHTML(agent, 64, 'xl')}</span>
+        <button class="avedit-btn" data-avedit title="修改图标">✎</button>
+      </span>
+    </div>`);
+    body.querySelector('[data-av]').ondblclick = () => openAvatarEditor(agent);
+    body.querySelector('[data-avedit]').onclick = (e) => { e.stopPropagation(); openAvatarEditor(agent); };
+
+    add(`<div class="sec">职责<span class="hintx">双击编辑</span></div>
+      <div class="entry desc"><div class="m" data-desc></div></div>`);
+    const descEl = body.querySelector('[data-desc]');
+    descEl.textContent = agent?.description || '—';
+    makeEditable(descEl, {
+      multiline: true,
+      placeholder: '描述这个 bot 的职责',
+      save: async (value) => {
+        await rpc('updateAgent', { agentId: activeId, patch: { description: value } });
+        const a = agents.find((x) => x.id === activeId);
+        if (a) a.description = value;
+        renderRoster();
+      },
+    });
+
+    add(`<div class="sec">记忆<span class="hintx">双击编辑</span></div>
+      <div class="entry mem"><div class="m" data-mem>读取中…</div></div>`);
+    const memEl = body.querySelector('[data-mem]');
+    rpc('readMemoryProfile', { agentId: activeId })
+      .then((r) => {
+        memEl.textContent = r.memory || '（空）';
+        makeEditable(memEl, {
+          multiline: true,
+          placeholder: '这个 bot 的长期记忆（Markdown）',
+          save: async (value) => {
+            await rpc('writeMemoryProfile', { agentId: activeId, text: value });
+          },
+        });
+      })
+      .catch(() => { memEl.textContent = '读取失败'; });
+
+    // Role action sits at the bottom of the pane, after everything else.
+    const mainId = hostSettings?.mainAgentId ?? null;
+    const mainAgent = agents.find((a) => a.id === mainId);
+    const isMain = mainId === activeId;
+    const holder = mainAgent && !isMain ? mainAgent.name : null;
+    add(`<div class="sec">角色</div>
+      <div class="entry role">
+        <div class="m" data-role></div>
+        <button class="bigbtn" data-setmain></button>
+      </div>`);
+    body.querySelector('[data-role]').textContent = isMain
+      ? '这个 bot 现在是幕僚长。'
+      : (holder ? `当前幕僚长：${holder}` : '还没有设置幕僚长。');
+    const roleBtn = body.querySelector('[data-setmain]');
+    roleBtn.textContent = isMain ? '取消幕僚长' : (holder ? '替换为幕僚长' : '设为幕僚长');
+    roleBtn.className = `bigbtn${isMain ? '' : ' primary'}`;
+    roleBtn.onclick = () => setChiefOfStaff(agent, { isMain, holder, mainId });
   }
 
   if (activeTab === 'routines') {
@@ -1910,8 +2601,7 @@ async function selectAgent(id) {
   $('title').textContent = a?.name ?? '—';
   $('subtitle').textContent = a?.description || '';
   const av = $('headAvatar');
-  av.style.background = colorFor(id);
-  av.textContent = initialOf(a?.name);
+  av.innerHTML = a ? avatarHTML(a, 28) : '';
 
   binding = await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
   $('model').textContent = binding.modelId ?? '—';
@@ -2193,10 +2883,18 @@ function runCommand(cmd) {
 }
 
 async function createAgent() {
-  const name = prompt('New bot name?');
-  if (!name) return;
+  const res = await askForm({
+    title: '新建 bot',
+    fields: [
+      { name: 'name', label: '名称', placeholder: '例如 Nas Bot' },
+      { name: 'description', label: '职责（可选）', placeholder: '它负责什么' },
+    ],
+    submitLabel: '创建',
+  });
+  if (!res || !res.name) return;
+  const name = res.name;
   try {
-    const a = await rpc('createAgent', { profile: { name, description: '' } });
+    const a = await rpc('createAgent', { profile: { name, description: res.description ?? '' } });
     agents = await rpc('listAgents');
     renderRoster();
     await selectAgent(a.id);
@@ -2434,6 +3132,24 @@ async function boot() {
   if (status) hostStatus = status;
   activeId = status?.activeAgentId ?? null;
   agents = await rpc('listAgents').catch(() => []);
+  hostSettings = await rpc('getHostSettings', {}).catch(() => ({}));
+
+  // Make the chief-of-staff explicit on first run: prefer the bot already carrying the
+  // 幕僚长 title, otherwise the first non-group bot. Persist so the role row agrees with
+  // the hero pinned at the top of the rail.
+  if (agents.length && !('mainAgentId' in hostSettings)) {
+    const seeded = agents.find((a) => a.title === '幕僚长')
+      ?? agents.find((a) => !a.isGroup)
+      ?? agents[0];
+    hostSettings = await rpc('setHostSettings', { patch: { mainAgentId: seeded.id } })
+      .catch(() => hostSettings);
+    if (!seeded.title) {
+      rpc('updateAgent', { agentId: seeded.id, patch: { title: '幕僚长' } })
+        .then(() => { seeded.title = '幕僚长'; renderRoster(); })
+        .catch(() => {});
+    }
+  }
+
   rpc('getChangedMids').then((pairs) => applyChangedMids(pairs)).catch(() => {});
   if (!agents.length) {
     $('log').innerHTML = '<div class="empty" style="margin:auto">还没有 bot。运行 <code>mgb init</code> 创建一个。</div>';
@@ -2517,6 +3233,98 @@ $('model').onclick = (e) => { e.stopPropagation(); openModelMenu(); };
 $('modelMenu').onclick = (e) => e.stopPropagation();
 $('modelFilter').addEventListener('input', (e) => renderModelList(e.target.value));
 document.addEventListener('click', () => $('modelMenu').classList.remove('open'));
+
+// Modal form dialog. Resolves to a field map, or null when cancelled.
+// `fields`: [{ name, label, value, placeholder, type, rows }]
+function askForm({ title, fields, submitLabel = '保存' }) {
+  return new Promise((resolve) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'askdlg';
+    const rows = fields.map((f) => {
+      const id = `ask-${f.name}`;
+      const control = f.rows
+        ? `<textarea id="${id}" rows="${f.rows}" placeholder="${esc(f.placeholder ?? '')}">${esc(f.value ?? '')}</textarea>`
+        : `<input id="${id}" type="${f.type ?? 'text'}" value="${esc(f.value ?? '')}" placeholder="${esc(f.placeholder ?? '')}" />`;
+      return `<label class="ask-row"><span>${esc(f.label)}</span>${control}</label>`;
+    }).join('');
+    wrap.innerHTML = `
+      <div class="ask-card">
+        <div class="ask-head">${esc(title)}</div>
+        <div class="ask-body">${rows}</div>
+        <div class="ask-foot">
+          <button class="s-act" data-cancel>取消</button>
+          <button class="s-act primary" data-ok>${esc(submitLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap);
+
+    const read = () => {
+      const out = {};
+      for (const f of fields) out[f.name] = wrap.querySelector(`#ask-${f.name}`).value.trim();
+      return out;
+    };
+    const done = (value) => { wrap.remove(); resolve(value); };
+    wrap.querySelector('[data-cancel]').onclick = () => done(null);
+    wrap.querySelector('[data-ok]').onclick = () => done(read());
+    wrap.onclick = (e) => { if (e.target === wrap) done(null); };
+    wrap.onkeydown = (e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); done(null); }
+      else if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); done(read()); }
+    };
+    const first = wrap.querySelector('.ask-body input, .ask-body textarea');
+    first?.focus();
+    first?.select?.();
+  });
+}
+
+// Double-click to edit, Cmd/Ctrl+Enter or blur to save, Esc to cancel.
+function makeEditable(el, { multiline = false, placeholder = '', save }) {
+  el.classList.add('editable');
+  el.title = '双击编辑';
+  el.ondblclick = () => {
+    if (el.querySelector('textarea, input')) return;
+    const raw = el.textContent === '（空）' ? '' : el.textContent;
+    const rect = el.getBoundingClientRect();
+    const editor = document.createElement(multiline ? 'textarea' : 'input');
+    editor.className = 'inline-edit';
+    editor.value = raw;
+    if (placeholder) editor.placeholder = placeholder;
+    el.textContent = '';
+    el.appendChild(editor);
+    el.classList.add('editing');
+    // Pin the field's box: its height used to come from the text, which now lives in the
+    // absolutely positioned editor — without this the memory field collapsed.
+    el.style.boxSizing = 'border-box';
+    el.style.height = `${Math.round(rect.height)}px`;
+    el.style.width = `${Math.round(rect.width)}px`;
+    editor.focus();
+    editor.setSelectionRange?.(editor.value.length, editor.value.length);
+
+    let done = false;
+    const finish = async (commit) => {
+      if (done) return;
+      done = true;
+      const value = editor.value;
+      el.classList.remove('editing');
+      el.style.height = '';
+      el.style.width = '';
+      el.style.boxSizing = '';
+      if (commit && value !== raw) {
+        el.textContent = value || '—';
+        try { await save(value); $('status').textContent = '已保存'; }
+        catch (err) { el.textContent = raw; $('status').textContent = `保存失败：${err.message}`; }
+      } else {
+        el.textContent = raw;
+      }
+    };
+    editor.onblur = () => finish(true);
+    editor.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      else if (e.key === 'Enter' && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true); }
+    };
+  };
+}
 
 // ---- reply-to ---------------------------------------------------------------
 // Quoting keeps the reference in the sent entry, so the model sees what was answered.
@@ -2611,12 +3419,14 @@ async function openSettings() {
   const st = await rpc('getHostSettings', {}).catch(() => ({}));
   const review = await rpc('getAutoReviewRules', {}).catch(() => ({}));
   const host = await rpc('getHostStatus', {}).catch(() => ({}));
-  settingsData = { st, review, host };
+  const provider = await rpc('getProviderConfig', { agentId: activeId }).catch(() => ({}));
+  settingsData = { st, review, host, provider };
   renderSettings();
 }
 
 // Four pages: each holds enough rows to fill the panel, so no page looks empty.
 const SETTINGS_SECTIONS = [
+  { id: 'provider', label: '模型接入' },
   { id: 'look', label: '外观与语言' },
   { id: 'notify', label: '通知与网络' },
   { id: 'review', label: '自动审批' },
@@ -2624,19 +3434,10 @@ const SETTINGS_SECTIONS = [
 ];
 
 function renderSettings() {
-  const { st, review, host } = settingsData ?? {};
+  const { st, review, host, provider } = settingsData ?? {};
   const nav = $('settingsNav');
   const body = $('settingsBody');
   if (!nav || !body) return;
-
-  nav.innerHTML = '';
-  for (const sec of SETTINGS_SECTIONS) {
-    const b = document.createElement('button');
-    b.textContent = sec.label;
-    b.className = sec.id === settingsSection ? 'on' : '';
-    b.onclick = () => { settingsSection = sec.id; renderSettings(); };
-    nav.appendChild(b);
-  }
 
   const lang = st?.language === 'en' ? 'en' : 'zh';
   const notif = st?.notifications?.isEnabled !== false;
@@ -2655,6 +3456,20 @@ function renderSettings() {
     `<div class="s-row"><span class="s-label">${label}<span class="s-desc">${desc}</span></span>${ctl}</div>`;
 
   const sections = {
+    provider: () => row('接入地址', 'OpenAI 兼容的 base URL，末尾不带 /chat/completions',
+        `<input type="text" id="setBaseUrl" value="${esc(provider?.baseUrl ?? '')}" placeholder="https://api.example.com/v1" />`)
+      + row('模型 ID', '当前 bot 使用的模型',
+        `<input type="text" id="setModelId" value="${esc(provider?.modelId ?? '')}" placeholder="model-name" />`)
+      + row('API Key', provider?.keyIsSet
+          ? `已配置${provider.keyPreview ? '（' + esc(provider.keyPreview) + '）' : ''}，留空则保持不变`
+          : '尚未配置，填入后写入本机密钥文件（权限 600）',
+        `<input type="password" id="setApiKey" value="" placeholder="${provider?.keyIsSet ? '••••••••' : 'sk-...'}" autocomplete="off" />`)
+      + row('密钥变量名', 'binding 里只存这个变量名，不存密钥本身',
+        `<input type="text" id="setKeyEnv" value="${esc(provider?.apiKeyEnv ?? '')}" />`)
+      + row('连接测试', '请求 /models 验证地址与密钥',
+        `<span class="s-val" id="tvResult"></span><button class="s-act" id="actTest">测试</button>`)
+      + row('保存', '写入绑定与密钥文件', `<button class="s-act" id="actSaveProvider">保存</button>`),
+
     look: () => row('界面语言', '影响界面文案与 bot 写入记忆的语言',
         `<select id="setLang"><option value="zh"${lang === 'zh' ? ' selected' : ''}>中文</option><option value="en"${lang === 'en' ? ' selected' : ''}>English</option></select>`)
       + row('气泡配色', '按 bot 区分聊天气泡颜色', sw('setBotColor', botColor))
@@ -2689,7 +3504,43 @@ function renderSettings() {
       + row('重新加载', '重新读取设置与名册', `<button class="s-act" id="actReload">重新加载</button>`),
   };
 
-  body.innerHTML = (sections[settingsSection] ?? sections.look)();
+  // One continuous column: every section renders, headers and dividers separate them.
+  // The left nav scrolls to a section instead of swapping content — that keeps the
+  // reading position and makes cross-section edits feel like one form.
+  body.innerHTML = SETTINGS_SECTIONS
+    .map((sec) => `<section class="s-group" id="sec-${sec.id}">`
+      + `<div class="s-sec">${sec.label}</div>`
+      + (sections[sec.id]?.() ?? '')
+      + '</section>')
+    .join('');
+
+  nav.innerHTML = '';
+  for (const sec of SETTINGS_SECTIONS) {
+    const b = document.createElement('button');
+    b.textContent = sec.label;
+    b.dataset.section = sec.id;
+    b.onclick = () => {
+      const target = body.querySelector(`#sec-${sec.id}`);
+      if (!target) return;
+      body.scrollTo({ top: Math.max(0, target.offsetTop), behavior: 'smooth' });
+    };
+    nav.appendChild(b);
+  }
+
+  // Highlight the section currently in view.
+  const markActive = () => {
+    const at = body.scrollTop + 40;
+    let current = SETTINGS_SECTIONS[0].id;
+    for (const sec of SETTINGS_SECTIONS) {
+      const el = body.querySelector(`#sec-${sec.id}`);
+      if (el && el.offsetTop <= at) current = sec.id;
+    }
+    for (const b of nav.querySelectorAll('button')) {
+      b.classList.toggle('on', b.dataset.section === current);
+    }
+  };
+  body.onscroll = markActive;
+  markActive();
 
   const bindSwitch = (id, apply) => {
     const el = body.querySelector('#' + id);
@@ -2706,6 +3557,42 @@ function renderSettings() {
   bindSwitch('setMsgs', (v) => rpc('setHostSettings', { patch: { messagesEnabled: v } }));
   bindSwitch('setTunnel', (v) => rpc('setHostSettings', { patch: { egressTunnelEnabled: v } }));
   bindSwitch('setReview', (v) => rpc('setHostSettings', { patch: { autoReviewInstructions: { isEnabled: v } } }));
+
+  body.querySelector('#actSaveProvider')?.addEventListener('click', async () => {
+    const btn = body.querySelector('#actSaveProvider');
+    btn.disabled = true;
+    try {
+      const payload = {
+        agentId: activeId,
+        baseUrl: body.querySelector('#setBaseUrl').value.trim(),
+        modelId: body.querySelector('#setModelId').value.trim(),
+        apiKeyEnv: body.querySelector('#setKeyEnv').value.trim(),
+      };
+      const key = body.querySelector('#setApiKey').value;
+      if (key) payload.apiKey = key;
+      await rpc('setProviderConfig', payload);
+      settingsData.provider = await rpc('getProviderConfig', { agentId: activeId });
+      binding = await rpc('getAgentBinding', { agentId: activeId });
+      $('model').textContent = binding.modelId ?? '—';
+      renderSettings();
+      $('status').textContent = '模型接入已保存';
+    } catch (err) {
+      $('status').textContent = `保存失败：${err.message}`;
+    } finally { btn.disabled = false; }
+  });
+
+  body.querySelector('#actTest')?.addEventListener('click', async () => {
+    const out = body.querySelector('#tvResult');
+    out.textContent = '测试中…';
+    try {
+      const r = await rpc('testProvider', {
+        agentId: activeId,
+        baseUrl: body.querySelector('#setBaseUrl').value.trim(),
+        apiKey: body.querySelector('#setApiKey').value || undefined,
+      });
+      out.textContent = r.ok ? `✓ ${r.ms}ms · ${r.models} 个模型` : `✗ ${r.error}`;
+    } catch (err) { out.textContent = `✗ ${err.message}`; }
+  });
 
   body.querySelector('#setLang')?.addEventListener('change', async (e) => {
     try { await rpc('setLanguage', { language: e.target.value }); $('status').textContent = '语言已保存，刷新页面生效'; }
@@ -2731,9 +3618,12 @@ function renderSettings() {
     reviewRules = settingsData.review; renderSettings();
   });
   const editRules = async (key, current, title) => {
-    const text = prompt(`${title}（每行一条）`, current.join('\n'));
-    if (text === null) return;
-    const list = text.split('\n').map((x) => x.trim()).filter(Boolean);
+    const res = await askForm({
+      title,
+      fields: [{ name: 'rules', label: '每行一条', value: current.join('\n'), rows: 6 }],
+    });
+    if (!res) return;
+    const list = res.rules.split('\n').map((x) => x.trim()).filter(Boolean);
     await rpc('setHostSettings', { patch: { autoReviewInstructions: { [key]: list } } });
     settingsData.st = await rpc('getHostSettings', {});
     renderSettings();
@@ -2811,14 +3701,20 @@ $('searchPanel')?.addEventListener('click', (e) => { if (e.target.id === 'search
 // ---- routine editor ---------------------------------------------------------
 // A small inline form instead of a modal: the routine tab already renders rows, so the
 // editor replaces the row content rather than opening another layer.
-function editRoutine(existing) {
+async function editRoutine(existing) {
   const isNew = !existing;
-  const name = prompt('任务名称', existing?.name ?? '');
-  if (name === null) return;
-  const cron = prompt('cron 表达式（如 0 8 * * *）', existing?.schedule ?? '0 8 * * *');
-  if (cron === null) return;
-  const promptText = prompt('任务内容（发给 bot 的指令）', existing?.prompt ?? '');
-  if (promptText === null) return;
+  const res = await askForm({
+    title: isNew ? '新建定时任务' : '编辑定时任务',
+    fields: [
+      { name: 'name', label: '名称', value: existing?.name ?? '' },
+      { name: 'cron', label: 'cron', value: existing?.schedule ?? '0 8 * * *', placeholder: '0 8 * * *' },
+      { name: 'prompt', label: '任务内容', value: existing?.prompt ?? '', rows: 4 },
+    ],
+  });
+  if (!res) return;
+  const name = res.name;
+  const cron = res.cron;
+  const promptText = res.prompt;
   const args = {
     agentId: activeId,
     name: name.trim() || '未命名任务',
@@ -2924,7 +3820,40 @@ $('input').addEventListener('keydown', (e) => {
   if (e.isComposing || composing || e.keyCode === 229) return;
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
-$('search').addEventListener('input', (e) => { searchQuery = e.target.value; renderRoster(); });
+// The rail search covers both the roster and the message history. Bots filter instantly;
+// transcripts are looked up once the query settles.
+let railSearchTimer = null;
+function setSearchQuery(v) {
+  searchQuery = v;
+  $('search').value = v;
+  document.querySelector('.search').classList.toggle('has-q', Boolean(v));
+}
+$('searchClear').addEventListener('click', () => {
+  setSearchQuery('');
+  searchHits = [];
+  searchHitsFor = '';
+  renderRoster();
+  $('search').focus();
+});
+$('search').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.stopPropagation(); setSearchQuery(''); searchHits = []; searchHitsFor = ''; renderRoster(); }
+});
+$('search').addEventListener('input', (e) => {
+  document.querySelector('.search').classList.toggle('has-q', Boolean(e.target.value));
+  searchQuery = e.target.value;
+  renderRoster();
+  clearTimeout(railSearchTimer);
+  const q = searchQuery.trim();
+  if (!q) { searchHits = []; searchHitsFor = ''; renderRoster(); return; }
+  railSearchTimer = setTimeout(async () => {
+    try {
+      const hits = await rpc('searchTranscripts', { query: q, limit: 20 });
+      searchHits = hits ?? [];
+      searchHitsFor = q;
+    } catch { searchHits = []; }
+    renderRoster();
+  }, 260);
+});
 $('toggleInfo').onclick = () => togglePane();
 $('newAgent').onclick = createAgent;
 $('toggleRail').onclick = toggleRail;

@@ -258,6 +258,16 @@ export class Roster {
     return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
   }
 
+  // Replace the profile memory file outright — the editable view in the UI writes here.
+  // Kept separate from appendMemory so the append-only log stays append-only.
+  writeMemory(id, text) {
+    const file = this.p.agentMemoryProfile(id);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const body = String(text ?? '');
+    fs.writeFileSync(file, body, 'utf8');
+    return file;
+  }
+
   appendMemory(id, text, { kind = 'note' } = {}) {
     const stamp = new Date().toISOString();
     const file = kind === 'profile' ? this.p.agentMemoryProfile(id) : this.logFile(id);

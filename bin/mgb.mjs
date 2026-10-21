@@ -17,25 +17,10 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { createHost, bootstrap } from '../src/host.mjs';
 import { resolveDataRoot, paths, readJson } from '../src/paths.mjs';
+import { loadSecretsIntoEnv } from '../src/secrets.mjs';
 
-// Secrets live in <dataRoot>/secrets/env.json (mode 600). They are loaded into the
-// process env before anything reads a binding, so a service started by launchd — which
-// has no shell profile — still finds the provider keys.
-function loadSecretsIntoEnv() {
-  const file = path.join(resolveDataRoot(), 'secrets', 'env.json');
-  if (!fs.existsSync(file)) return 0;
-  try {
-    const bag = JSON.parse(fs.readFileSync(file, 'utf8'));
-    let n = 0;
-    for (const [k, v] of Object.entries(bag)) {
-      if (typeof v === 'string' && v && !process.env[k]) { process.env[k] = v; n += 1; }
-    }
-    return n;
-  } catch {
-    return 0;
-  }
-}
-loadSecretsIntoEnv();
+// Provider keys live in <dataRoot>/secrets/env.json (mode 600); see src/secrets.mjs.
+loadSecretsIntoEnv(resolveDataRoot());
 import { resolveBinding, setAgentBinding, loadBindings } from '../src/providers/bindings.mjs';
 
 const DIM = '\u001b[2m';
