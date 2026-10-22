@@ -57,12 +57,24 @@ export class Roster {
     if (!profile) return null;
     const store = this.store(id);
     const metadata = store.getKV('metadata', {}) ?? {};
-    const entries = store.readWindow({ limit: 1 });
-    const last = entries[0] ?? null;
+    // A group keeps its transcript in the room conversation, not in the DM one; reading
+    // the DM window found nothing and the row fell back to the description.
+    const isGroup = profile.isGroup === true;
+    // Read the conversation this row stands for: the room for a group, the DM otherwise.
+    // A cleared conversation shows nothing in the row either: the preview must fall back
+    // to the description, exactly like the transcript view does.
+    const clearedAtMs = Number(store.getKV('clearedAtMs', 0) ?? 0);
+    const read = (limit) => store.readConversation({
+      conversationId: isGroup ? `group:${id}` : `dm:${id}`,
+      limit,
+      includeToolCalls: false,
+    }).filter((e) => (e.timestampMs ?? 0) > clearedAtMs);
+    const entries = read(1);
+    const last = entries.slice().sort((a, b) => (b.timestampMs ?? 0) - (a.timestampMs ?? 0))[0] ?? null;
     return {
       id,
       name: profile.name,
-      isGroup: profile.isGroup === true,
+      isGroup,
       ...(profile.isGroup === true ? { memberIds: this.groupMembers(id) } : {}),
       description: profile.description ?? '',
       title: profile.title ?? '',
@@ -73,7 +85,9 @@ export class Roster {
       lastActivityMs: last?.timestampMs ?? metadata.createdAtMs ?? 0,
       // Preview text for the roster row: the newest human-readable line in the chat.
       lastText: (() => {
-        const rows = store.readWindow({ limit: 24 }).filter((e) => !e.hidden);
+        const rows = read(24)
+          .filter((e) => !e.hidden)
+          .sort((a, b) => (b.timestampMs ?? 0) - (a.timestampMs ?? 0));
         for (const e of rows) {
           const content = e.kind === 'send-message' || e.kind === 'message'
             ? (e.message?.content ?? e.text) : null;

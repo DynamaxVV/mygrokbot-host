@@ -663,6 +663,8 @@
   .bigbtn.danger:hover { background: color-mix(in srgb, var(--err) 12%, var(--surface));
     border-color: var(--err); }
   .entry.danger .m { color: var(--dim); font-size: 12px; line-height: 1.5; }
+  .entry.danger .btnrow { display: flex; gap: 8px; margin-top: 10px; }
+  .entry.danger .btnrow .bigbtn { margin-top: 0; }
   .entry.memlist { display: grid; gap: 2px; }
   .memrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
     border-radius: 7px; font-size: 12.5px; }
@@ -1824,6 +1826,20 @@ async function jumpToEntry(agentId, entryId) {
     await new Promise((r) => setTimeout(r, 120));
   }
   $('status').textContent = '这条消息不在当前视图（可能已被截断）';
+}
+
+async function clearConversation(mode) {
+  const agent = agents.find((a) => a.id === activeId);
+  if (!agent) return;
+  const label = mode === 'purge'
+    ? `彻底删除「${agent.name}」的对话记录？\n\n记录会被清空，记忆和配置保留。`
+    : `清空「${agent.name}」的对话显示？\n\n界面上从头隐藏，记录仍保留供 bot 参考。`;
+  if (!confirm(label)) return;
+  try {
+    await rpc('clearConversation', { agentId: activeId, mode });
+    await selectAgent(activeId);
+    $('status').textContent = mode === 'purge' ? '对话记录已删除' : '对话显示已清空';
+  } catch (err) { $('status').textContent = `失败：${err.message}`; }
 }
 
 // Deleting a bot is irreversible and takes its transcript and memory with it, so it
@@ -2991,6 +3007,18 @@ function renderPane() {
     roleBtn.onclick = () => setChiefOfStaff(agent, { isMain, holder, mainId });
 
     // Destructive action last, visually separated from the role control above it.
+    add(`<div class="sec">对话记录</div>
+      <div class="entry danger">
+        <div class="m">清空显示：只把当前对话从头隐藏，记录仍然留给 bot 参考。<br>
+          彻底删除：直接删掉这个 bot 的对话记录，记忆与配置保留。</div>
+        <div class="btnrow">
+          <button class="bigbtn" data-clearview>清空显示</button>
+          <button class="bigbtn danger" data-clearpurge>彻底删除对话</button>
+        </div>
+      </div>`);
+    body.querySelector('[data-clearview]').onclick = () => clearConversation('view');
+    body.querySelector('[data-clearpurge]').onclick = () => clearConversation('purge');
+
     add(`<div class="sec">危险操作</div>
       <div class="entry danger">
         <div class="m">删除这个 bot：对话记录、记忆和本地数据都会一并移除，无法撤销。</div>
@@ -3184,7 +3212,13 @@ async function selectAgent(id) {
   ]);
   if (version !== selectionVersion || requestVersion !== transcriptVersion) return;
   pendingIds = new Set(pending ?? []);
-  entries = mergeOutline(rows.slice().sort((x, y) => x.seq - y.seq), outline ?? []);
+  // A cleared conversation keeps its rows but hides them from this point backwards.
+  const watermark = await rpc('getClearWatermark', { agentId: id }).catch(() => ({ clearedAtMs: 0 }));
+  const clearedAtMs = Number(watermark?.clearedAtMs ?? 0);
+  const visibleRows = clearedAtMs
+    ? rows.filter((r) => (r.timestampMs ?? 0) > clearedAtMs)
+    : rows;
+  entries = mergeOutline(visibleRows.slice().sort((x, y) => x.seq - y.seq), outline ?? []);
   renderStream();
   await refreshPaneData();
   if (version === selectionVersion) rpc('setActiveAgent', { agentId: id }).catch(() => {});
@@ -3710,6 +3744,12 @@ function connectEvents() {
         a.lastActivityMs = ev.entry?.timestampMs ?? a.lastActivityMs;
         // A bot reply that lands while another conversation is open is unread.
         const kind = ev.entry?.kind;
+        // Keep the card preview live: the roster is cached at boot, so without this the
+        // row kept showing the description until a full reload.
+        const content = ev.entry?.message?.content;
+        if ((kind === 'send-message' || kind === 'message') && typeof content === 'string' && content.trim()) {
+          a.lastText = content.trim().slice(0, 160);
+        }
         const fromBot = kind === 'send-message'
           || (kind === 'message' && ev.entry?.role === 'assistant');
         // turn-end carries no entry, so a finished reply is the signal that there is
@@ -3728,6 +3768,15 @@ function connectEvents() {
     switch (ev.type) {
       case 'transcript': {
         if (ev.entry?.hidden) return;
+        {
+          const own = agents.find((x) => x.id === (ev.botId ?? ev.agentId ?? activeId));
+          const text = ev.entry?.message?.content;
+          if (own && ['send-message', 'message'].includes(ev.entry?.kind)
+            && typeof text === 'string' && text.trim()) {
+            own.lastText = text.trim().slice(0, 160);
+            renderRoster();
+          }
+        }
         const cached = ev.entry.id;
         // The optimistic row already carries this id; appending again would show the
         // operator's own message twice.
@@ -4279,7 +4328,9 @@ function renderSettings() {
         `<select id="setLang"><option value="zh"${lang === 'zh' ? ' selected' : ''}>中文</option><option value="en"${lang === 'en' ? ' selected' : ''}>English</option></select>`)
       + row('气泡配色', '按 bot 区分聊天气泡颜色', sw('setBotColor', botColor))
       + row('时区', '定时任务按此时区触发',
-        `<input type="text" id="setTz" value="${esc(st?.userTimeZone ?? '')}" />`),
+        `<input type="text" id="setTz" value="${esc(st?.userTimeZone ?? '')}" />`)
+      + row('对你的称呼', 'bot 在对话里怎么称呼你，例如「主子」',
+        `<input type="text" id="setUserTitle" value="${esc(st?.userTitle ?? '')}" placeholder="主子" />`),
 
     notify: () => row('桌面通知', '任务完成或需要批准时提醒', sw('setNotif', notif))
       + row('消息接收', '允许 bot 主动发消息给你', sw('setMsgs', msgs))
@@ -4397,6 +4448,15 @@ function renderSettings() {
       });
       out.textContent = r.ok ? `✓ ${r.ms}ms · ${r.models} 个模型` : `✗ ${r.error}`;
     } catch (err) { out.textContent = `✗ ${err.message}`; }
+  });
+
+  body.querySelector('#setUserTitle')?.addEventListener('change', async (e) => {
+    try {
+      settingsData.st = await rpc('setHostSettings', { patch: { userTitle: e.target.value.trim() } });
+      $('status').textContent = e.target.value.trim()
+        ? `称呼已保存：${e.target.value.trim()}`
+        : '称呼已清空，bot 会直接用「你」';
+    } catch (err) { $('status').textContent = `保存失败：${err.message}`; }
   });
 
   body.querySelector('#setLang')?.addEventListener('change', async (e) => {

@@ -38,20 +38,27 @@ test('two groups sharing a bot and concurrent DM keep provider histories and mem
   assert.doesNotMatch(textOf(await f.rows(a)), /ROOM_(ONE|TWO)_SECRET/);
 });
 
-test('normal createGroup bot post persists before receipt, never wakes or duplicates into member DMs; peer projects once as user', options, async (t) => {
+test('a bot post persists, wakes members to decide for themselves, and never duplicates into member DMs', options, async (t) => {
   const f = await fixture(t);
   const a = f.bot('Author'), b = f.bot('Reader');
   const g = await f.rpc('createGroup', { name: 'Normal Group', memberAgentIds: [a.id, b.id] });
   const receipt = await f.rpc('messageAgent', { fromAgentId: a.id, to: g.id, text: 'PEER_POST_UNIQUE', priority: true, messageId: 'bot-post-1' });
-  assert.equal(receipt.woken, false);
+  assert.equal(receipt.woken, true, 'members are woken so they can decide to answer or pass');
   assert.equal(f.host.roster.store(g.id).getEntry(receipt.entryId).message.content, 'PEER_POST_UNIQUE');
-  assert.equal(f.requests.length, 0);
+  // Waking is asynchronous; the room keeps exactly one copy of the post either way.
+  // The visible copy lives in the room; the wake prompts are hidden rows in the same
+  // conversation, so only non-hidden rows count as "posted".
+  assert.equal((await f.rows(g)).filter((row) => !row.hidden && row.message?.content === 'PEER_POST_UNIQUE').length, 1);
   for (const bot of [a, b]) assert.doesNotMatch(textOf(await f.rows(bot)), /PEER_POST_UNIQUE/);
   const duplicate = await f.rpc('messageAgent', { fromAgentId: a.id, to: g.id, text: 'PEER_POST_UNIQUE', priority: true, messageId: 'bot-post-1' });
   assert.equal(duplicate.duplicate, true);
   const post = await f.send(g, 'reader inspect', { mentionAgentIds: [b.id] });
   await f.groupSettled(post.clientNonce);
-  const matches = f.requests[0].body.messages.filter((row) => String(row.content).includes('PEER_POST_UNIQUE'));
+  // Wake requests now exist too, so pick the mention run by its own prompt and check
+  // that it sees the bot post exactly once.
+  const mentionRun = f.requests.find((r) => String(r.body.messages.at(-1)?.content ?? '').includes('reader inspect'));
+  assert.ok(mentionRun, 'the mentioned member ran');
+  const matches = mentionRun.body.messages.filter((row) => String(row.content).includes('PEER_POST_UNIQUE'));
   assert.equal(matches.length, 1);
   assert.equal(matches[0].role, 'user');
   assert.match(matches[0].content, new RegExp(a.id));

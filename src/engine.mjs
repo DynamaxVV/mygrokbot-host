@@ -38,8 +38,8 @@ export class TurnEngine extends TurnRuntime {
       '',
       '## Language',
       lang === 'zh'
-        ? 'The operator works in Chinese. Write memory entries, notices, and your own notes in Chinese. Reply in the language the operator uses.'
-        : 'The operator works in English. Write memory entries, notices, and your own notes in English. Reply in the language the operator uses.',
+        ? `Address the operator as “${settings.userTitle || '你'}”. Write memory entries, notices, and your own notes in Chinese. Reply in the language the operator uses.`
+        : `Address the operator as “${settings.userTitle || 'you'}”. Write memory entries, notices, and your own notes in English. Reply in the language the operator uses.`,
       '',
       '## Memory',
       memory ? memory : '(no memory yet)',

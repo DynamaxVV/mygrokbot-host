@@ -280,6 +280,19 @@ export class AgentStore {
     return { seq: row.seq, ...next };
   }
 
+  // Purge the transcript. `fromSeq: null` removes everything; passing a seq keeps the
+  // rows above it (used by "clear view" which only hides what came before).
+  deleteEntries({ throughSeq = null } = {}) {
+    const sql = throughSeq == null
+      ? 'DELETE FROM transcript_entries'
+      : 'DELETE FROM transcript_entries WHERE seq <= ?';
+    const stmt = this.stmt(sql);
+    const before = this.stmt('SELECT COUNT(*) AS n FROM transcript_entries').get().n;
+    if (throughSeq == null) stmt.run(); else stmt.run(throughSeq);
+    const after = this.stmt('SELECT COUNT(*) AS n FROM transcript_entries').get().n;
+    return { removed: before - after, kept: after };
+  }
+
   maxSeq() {
     return Number(this.stmt('SELECT COALESCE(MAX(seq), 0) AS m FROM transcript_entries').get().m);
   }

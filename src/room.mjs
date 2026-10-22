@@ -281,10 +281,10 @@ export class RoomTurns {
     const entry = { kind: 'send-message', id: `room-${randomUUID()}`, messageId: nonce, schemaVersion: 2,
       conversationId: groupConversation(room), hidden: false, fromAgent: { id: from, name: author.name ?? from },
       speaker: { kind: 'bot', id: from, name: author.name ?? from }, message: { type: 'text', content: input.text }, timestampMs: Date.now() };
+    const members = this.roster.groupMembers(room).filter((id) => id !== from);
     const receipt = { delivered: true, groupId: room, roomEntryId: entry.id, entryId: entry.id,
-      members: this.roster.groupMembers(room).filter((id) => id !== from), woken: false,
+      members, woken: false,
       notes: [
-        'Group posts do not wake members.',
         ...(priority ? ['priority is 1:1 only — this post did not interrupt members'] : []),
         ...(images.length ? ['the attached image(s) were NOT delivered — group messages are text-only'] : []),
       ] };
@@ -299,7 +299,27 @@ export class RoomTurns {
       signal?.throwIfAborted();
       return result;
     });
-    return { ...admitted.record, ...(admitted.replayed ? { duplicate: true, replayed: true } : {}) };
+
+    // Members are woken so they can decide for themselves whether this needs an answer.
+    // They run on the agent lane (behind the operator's own work) and a reply of "pass"
+    // posts nothing into the room.
+    if (!admitted.replayed && this.wakeMembersOnBotPost !== false) {
+      for (const memberId of members) {
+        if (!this.validMember(memberId)) continue;
+        this.engine.dispatchAdmission({
+          agentId: memberId,
+          prompt: `[group:${author.name ?? room}] ${input.text}\n\n(you are ${this.roster.profile(memberId)?.name ?? memberId} in this group — reply as yourself if a reply is useful, otherwise answer exactly "pass")`,
+          clientNonce: `group-bot:${nonce}:${memberId}`,
+          trigger: 'group',
+          source: 'agent',
+          lane: 'agent',
+          conversationId: groupConversation(room),
+          hidden: true,
+        }).catch((error) => this.log('room.botwake.error', { room, memberId, error: error.message }));
+      }
+      receipt.woken = true;
+    }
+    return { ...admitted.record, ...receipt, ...(admitted.replayed ? { duplicate: true, replayed: true } : {}) };
   }
   async runRound({ roomId, newMessages = [], isWindingDown = false, deadlineMs = null }) {
     this.assertOpen();

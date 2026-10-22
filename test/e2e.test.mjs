@@ -203,7 +203,7 @@ test('peer delivery is idempotent on messageId', async () => {
   assert.equal(transcript.result.filter((e) => e.peerMessageId === 'm-1').length, 1);
 });
 
-test('a group post persists once in the room without interrupting or copying into private chats', async () => {
+test('a group post persists once in the room, wakes members, and never copies into private chats', async () => {
   const m1 = host.roster.create({ name: 'Member One' });
   const m2 = host.roster.create({ name: 'Member Two' });
   const group = host.roster.createGroup({ name: 'Ops Room', memberAgentIds: [m1.id, m2.id, agentId] });
@@ -213,8 +213,9 @@ test('a group post persists once in the room without interrupting or copying int
   assert.equal(posted.result.delivered, true);
   assert.deepEqual(posted.result.members.sort(), [m1.id, m2.id].sort());
   assert.ok(posted.result.notes?.some((n) => /priority is 1:1 only/.test(n)));
-  assert.equal(posted.result.woken, false);
-  assert.equal(mock.requests.length, callsBefore);
+  // Members are woken so each can decide whether the post needs an answer; they still
+  // get no copy of it in their private chat.
+  assert.equal(posted.result.woken, true);
 
   const t = await rpc('getAgentTranscript', { agentId: m1.id });
   assert.ok(!t.result.some((e) => e.message?.content?.includes('standup at 10')), 'private chat has no group copy');

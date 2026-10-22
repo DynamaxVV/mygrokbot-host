@@ -526,6 +526,28 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     },
 
     // ---- memory ---------------------------------------------------------
+    // Two levels of "clear the conversation":
+    //   view  — keep the rows, record a watermark; the transcript query starts after it
+    //   purge — delete the rows outright (memory and profile are untouched)
+    clearConversation: ({ agentId, mode = 'view' }) => {
+      const id = roster.resolve(agentId);
+      const store = roster.store(id);
+      const throughSeq = store.maxSeq();
+      if (mode === 'purge') {
+        const result = store.deleteEntries();
+        store.setKV('clearedAtMs', 0);
+        return { agentId: id, mode, ...result };
+      }
+      // A timestamp watermark is enough: the client hides everything at or before it and
+      // the rows stay available for the model.
+      const at = Date.now();
+      store.setKV('clearedAtMs', at);
+      return { agentId: id, mode, clearedAtMs: at };
+    },
+    getClearWatermark: ({ agentId }) => {
+      const id = roster.resolve(agentId);
+      return { agentId: id, clearedAtMs: roster.store(id).getKV('clearedAtMs', 0) ?? 0 };
+    },
     readMemory: ({ agentId }) => ({ memory: roster.readMemoryAll(roster.resolve(agentId)) }),
     // The profile file only: the pane edits what it can write back.
     readMemoryProfile: ({ agentId }) => {
