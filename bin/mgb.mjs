@@ -140,7 +140,7 @@ function cmdInit(args) {
 }
 
 function cmdDoctor(args) {
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const checks = [];
   const add = (name, ok, detail = '') => checks.push({ name, ok, detail });
 
@@ -214,7 +214,7 @@ async function cmdServe(args) {
 
 function cmdAgents(args) {
   const sub = args[0] ?? 'ls';
-  const host = createHost({});
+  const host = createHost({ recover: false });
   if (sub === 'ls') {
     const active = host.roster.activeId();
     table(
@@ -265,20 +265,24 @@ async function cmdPrompt(args) {
   const agentRef = args[0];
   const text = args.slice(1).join(' ').trim();
   if (!agentRef || !text) return fail('prompt <agent> <text>');
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const agentId = host.roster.resolve(agentRef);
+  host.resume();
+  const isGroup = host.roster.profile(agentId)?.isGroup === true;
   const binding = resolveBinding(host.root, agentId, process.env);
   out(`${DIM}${binding.modelId} @ ${binding.baseUrl}${OFF}`);
   const unsubscribe = host.bus.subscribe((event) => {
     if (event.agentId !== agentId) return;
-    if (event.type === 'text-delta') process.stdout.write(event.text);
+    if (event.hidden) return;
+    if (isGroup && event.type === 'transcript' && event.entry?.kind === 'send-message') out(`\n${event.entry.fromAgent?.name ?? 'bot'}: ${event.entry.message?.content ?? ''}`);
+    else if (event.type === 'text-delta') process.stdout.write(event.text);
     else if (event.type === 'reasoning-delta') process.stderr.write(`${DIM}${event.text}${OFF}`);
     else if (event.type === 'tool-call') out(`\n${CYAN}tool${OFF} ${event.entry.name} ${DIM}${JSON.stringify(event.entry.args).slice(0, 160)}${OFF}`);
     else if (event.type === 'tool-result') out(`${DIM}tool result: ${String(typeof event.result === 'string' ? event.result : JSON.stringify(event.result)).slice(0, 300)}${OFF}`);
     else if (event.type === 'approval-request') out(`\n${YELLOW}approval required${OFF} ${event.entry.message.approval.command}`);
     else if (event.type === 'turn-error') out(`\n${RED}${event.error}${OFF}`);
   });
-  const acceptance = host.engine.admit({ agentId, prompt: text });
+  const acceptance = isGroup ? await host.engine.postFromOperator({ groupId: agentId, text }) : host.engine.admit({ agentId, prompt: text });
   await waitForAcceptance(host, acceptance.clientNonce);
   unsubscribe();
   out('');
@@ -289,7 +293,7 @@ async function waitForAcceptance(host, nonce, timeoutMs = 10 * 60_000) {
   const started = Date.now();
   for (;;) {
     const state = host.engine.acceptanceStatus(nonce);
-    if (['done', 'error', 'awaiting-approval'].includes(state.state)) return state;
+    if (['done', 'error', 'interrupted', 'needs-reconciliation', 'awaiting-approval', 'awaiting-answer'].includes(state.state)) return state;
     if (Date.now() - started > timeoutMs) return state;
     await new Promise((r) => setTimeout(r, 120));
   }
@@ -301,9 +305,9 @@ function cmdTail(args) {
     allowPositionals: true,
     options: { limit: { type: 'string', default: '30' } },
   });
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const id = host.roster.resolve(positionals[0]);
-  const entries = host.roster.store(id).readWindow({ limit: Number(values.limit) }).reverse();
+  const entries = host.engine.visibleEntries(id, { limit: Number(values.limit) }).reverse();
   for (const entry of entries) {
     const who =
       entry.kind === 'message'
@@ -329,7 +333,7 @@ function cmdMemory(args) {
     allowPositionals: true,
     options: { append: { type: 'string' }, kind: { type: 'string', default: 'note' } },
   });
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const id = host.roster.resolve(positionals[0]);
   if (values.append) {
     const file = host.roster.appendMemory(id, values.append, { kind: values.kind });
@@ -342,7 +346,7 @@ function cmdMemory(args) {
 
 function cmdSkill(args) {
   const sub = args[0] ?? 'ls';
-  const host = createHost({});
+  const host = createHost({ recover: false });
   if (sub === 'ls') {
     table(host.catalog.list(), [
       { label: 'name', get: (s) => s.name },
@@ -383,7 +387,7 @@ function cmdSkill(args) {
 
 function cmdRoutine(args) {
   const sub = args[0] ?? 'ls';
-  const host = createHost({});
+  const host = createHost({ recover: false });
   if (sub === 'tick') {
     const tz = host.hostSettings().userTimeZone ?? 'UTC';
     out(JSON.stringify(host.routines.tick(new Date(), tz), null, 2));
@@ -442,7 +446,7 @@ function cmdBind(args) {
       fast: { type: 'boolean', default: false },
     },
   });
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const id = host.roster.resolve(positionals[0]);
   const patch = {};
   if (values.model) patch.modelId = values.model;
@@ -473,7 +477,7 @@ async function cmdVerify(args) {
       timeout: { type: 'string', default: '120000' },
     },
   });
-  const host = createHost({});
+  const host = createHost({ recover: false });
   const id = host.roster.resolve(positionals[0]);
   const patch = {};
   if (values.model) patch.modelId = values.model;
@@ -490,7 +494,7 @@ async function cmdVerify(args) {
   let state = acc;
   while (Date.now() < deadline) {
     state = host.engine.acceptanceStatus(acc.clientNonce);
-    if (['done', 'error', 'awaiting-approval'].includes(state.state)) break;
+    if (['done', 'error', 'interrupted', 'needs-reconciliation', 'awaiting-approval', 'awaiting-answer'].includes(state.state)) break;
     await new Promise((r) => setTimeout(r, 250));
   }
   const rows = host.roster.store(id).readAll();
@@ -505,7 +509,7 @@ async function cmdVerify(args) {
 
 function cmdPolicy(args) {
   const sub = args[0] ?? 'show';
-  const host = createHost({});
+  const host = createHost({ recover: false });
   if (sub === 'show') {
     out(JSON.stringify(host.tools.policy(), null, 2));
     return;

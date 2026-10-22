@@ -39,6 +39,14 @@ function fakeClock() {
 
 const tick = () => new Promise((r) => setImmediate(r));
 
+function removeFixtureRoot(root) {
+  const absolute = path.resolve(root);
+  assert.equal(absolute, root);
+  assert.equal(path.dirname(absolute), path.resolve(os.tmpdir()));
+  assert.ok(path.basename(absolute).startsWith('mgb-'));
+  fs.rmSync(absolute, { recursive: true, force: true });
+}
+
 test('user lane runs before background regardless of arrival order', async () => {
   const clock = fakeClock();
   const s = new RunScheduler({ clock });
@@ -123,42 +131,39 @@ test('different agents run independently', async () => {
   release();
 });
 
-test('watchdog trips after watchdogMs, then abandons the run after grace', async () => {
+test('watchdog requests cancellation and retains a stuck slot until real settlement', { timeout: 3000 }, async () => {
   const clock = fakeClock();
   const events = [];
-  const s = new RunScheduler({
-    clock,
-    watchdogMs: 1000,
-    watchdogGraceMs: 500,
-    telemetry: { onWatchdog: (e) => events.push(e.stage) },
-  });
+  let aborted = 0;
+  const s = new RunScheduler({ clock, watchdogMs: 1000, watchdogGraceMs: 500,
+    telemetry: { onWatchdog: (e) => events.push(e.stage) } });
   let releaseActive;
-  const activeGate = new Promise((r) => {
-    releaseActive = r;
-  });
-  s.enqueue('bot', async () => {
-    await activeGate;
-  });
+  const gate = new Promise((resolve) => { releaseActive = resolve; });
+  const first = s.enqueue('bot', () => gate, { abort: () => { aborted++; } });
   await tick();
-  let ranAfterEscape = false;
-  const second = s.enqueue('bot', async () => {
-    ranAfterEscape = true;
-  }, { lane: 'user' });
-
-  clock.advance(1000);
-  assert.ok(events.includes('trip'), 'watchdog must trip when a user turn waits too long');
-
-  clock.advance(500);
-  assert.ok(events.includes('escape'), 'grace must end in an escape, not a deadlock');
-  // The enqueued promise resolves when the turn settles; it carries no value.
-  await second;
-  assert.equal(ranAfterEscape, true, 'the queued user turn actually ran after the escape');
-
-  releaseActive();
-  await tick();
-  await tick();
-  assert.ok(events.includes('late_settle'), 'the abandoned run settles late and is reported as such');
-  s.dispose();
+  let successorStarted = false;
+  const second = s.enqueue('bot', async () => { successorStarted = true; });
+  try {
+    clock.advance(1000);
+    assert.equal(aborted, 1);
+    assert.ok(events.includes('trip'));
+    clock.advance(500);
+    await tick();
+    assert.ok(events.includes('stuck'));
+    assert.equal(s.getDiagnostics()[0].active.phase, 'stuck');
+    assert.equal(successorStarted, false);
+    let drained = false;
+    const drain = s.drain().then(() => { drained = true; });
+    await tick();
+    assert.equal(drained, false);
+    releaseActive();
+    await Promise.all([first, second, drain]);
+    assert.equal(successorStarted, true);
+    assert.deepEqual(s.getDiagnostics(), []);
+  } finally {
+    releaseActive();
+    await s.shutdown();
+  }
 });
 
 test('dispose cancels queued work instead of hanging', async () => {
@@ -221,7 +226,7 @@ test('acceptance ledger persists an admitted prompt and answers lookups', () => 
   const missing = ledger.lookup({ clientNonce: 'never-seen' });
   assert.equal(missing.outcome, 'not-found');
 
-  fs.rmSync(root, { recursive: true, force: true });
+  removeFixtureRoot(root);
 });
 
 test('a replayed nonce with different text is a conflict, not a second turn', () => {
@@ -236,7 +241,7 @@ test('a replayed nonce with different text is a conflict, not a second turn', ()
   assert.equal(conflict.replayed, true);
   assert.equal(conflict.conflict, true);
   assert.equal(conflict.rejectionCode, 'send/nonce-digest-mismatch');
-  fs.rmSync(root, { recursive: true, force: true });
+  removeFixtureRoot(root);
 });
 
 test('a corrupt ledger degrades to unknown-durability, never a false not-found', () => {
@@ -247,7 +252,7 @@ test('a corrupt ledger degrades to unknown-durability, never a false not-found',
   assert.equal(lookup.outcome, 'unknown-durability');
   const quarantined = fs.readdirSync(root).filter((f) => f.startsWith('send-acceptance.json.corrupt-'));
   assert.equal(quarantined.length, 1, 'the corrupt file is quarantined, not silently dropped');
-  fs.rmSync(root, { recursive: true, force: true });
+  removeFixtureRoot(root);
 });
 
 test('a routine can carry a group of triggers and still fire on cron', async () => {
@@ -283,8 +288,8 @@ test('a routine can carry a group of triggers and still fire on cron', async () 
   const unrelated = host.routines.fireExternal({ source: 'something-else' });
   assert.equal(unrelated.length, 0);
 
-  host.roster.closeStores();
-  fs2.rmSync(root, { recursive: true, force: true });
+  await host.close();
+  removeFixtureRoot(root);
 });
 
 test('an unrecognized trigger shape is refused, not silently stored', async () => {
@@ -296,8 +301,8 @@ test('an unrecognized trigger shape is refused, not silently stored', async () =
     () => host.routines.create({ agentId: agent.id, name: 'X', prompt: 'p', trigger: { type: 'nonsense' } }),
     /not a recognized shape/,
   );
-  host.roster.closeStores();
-  fs.rmSync(root, { recursive: true, force: true });
+  await host.close();
+  removeFixtureRoot(root);
 });
 
 test('auto-review: three resolutions, standing always, and staleness', async () => {
@@ -348,7 +353,7 @@ test('auto-review: three resolutions, standing always, and staleness', async () 
     () => resolve({ root, resolution: 'approved', tool: 'shell', command: 'x', entry, expectedRequestId: 'other' }),
     StaleApprovalError,
   );
-  fs.rmSync(root, { recursive: true, force: true });
+  removeFixtureRoot(root);
 });
 
 test('pending approval cards are expired at startup', async () => {
@@ -367,8 +372,8 @@ test('pending approval cards are expired at startup', async () => {
   assert.equal(expired, 1);
   const after = store.getEntry('send-approval-1');
   assert.equal(after.message.resolution, 'expired');
-  host.roster.closeStores();
-  fs.rmSync(root, { recursive: true, force: true });
+  await host.close();
+  removeFixtureRoot(root);
 });
 
 test('a card older than the 10-minute TTL is stale', async () => {
@@ -388,5 +393,5 @@ test('a card older than the 10-minute TTL is stale', async () => {
 
   const fresh = { timestampMs: Date.now(), message: { type: 'auto-review-approval', approval: { requestId: 'r2', command: 'x' } } };
   assert.equal(isCardLive(fresh), true);
-  fs.rmSync(root, { recursive: true, force: true });
+  removeFixtureRoot(root);
 });

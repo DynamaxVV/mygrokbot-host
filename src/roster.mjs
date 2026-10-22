@@ -4,7 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { ensureAgentDirs, readJson, writeJson } from './paths.mjs';
 import { openAgentStore } from './db.mjs';
 
@@ -90,6 +90,30 @@ export class Roster {
     if (!store) {
       ensureAgentDirs(this.p, id);
       store = openAgentStore(this.p.agentStore(id));
+      if (store.getKV('conversationSchemaVersion', 0) < 2) {
+        const rows = store.readAll();
+        if (rows.length) {
+          // Checkpoint before copying: a raw SQLite copy without its WAL is incomplete.
+          store.db.exec('PRAGMA wal_checkpoint(FULL)');
+          const backup = `${store.file}.pre-conversations-v2`;
+          if (!fs.existsSync(backup)) fs.copyFileSync(store.file, backup, fs.constants.COPYFILE_EXCL);
+          const hiddenTurns = new Set(rows.filter((e) => e.hidden && e.turnId).map((e) => e.turnId));
+          const isGroup = this.profile(id)?.isGroup === true;
+          store.db.exec('BEGIN IMMEDIATE');
+          try {
+            for (const row of rows) {
+              if (row.conversationId) continue;
+              const ambiguous = row.hidden || (row.turnId && hiddenTurns.has(row.turnId));
+              const conversationId = ambiguous ? `legacy:unknown:${id}` : `${isGroup ? 'group' : 'dm'}:${id}`;
+              store.updateEntry(row.id, (entry) => ({ ...entry, schemaVersion: 2, conversationId,
+                ...(ambiguous ? { legacyUnclassified: true } : {}) }));
+            }
+            store.setKV('conversationSchemaVersion', 2);
+            store.db.exec('COMMIT');
+          } catch (error) { store.db.exec('ROLLBACK'); store.close(); throw error; }
+        } else store.setKV('conversationSchemaVersion', 2);
+      }
+      store.defaultConversationId = `${this.profile(id)?.isGroup ? 'group' : 'dm'}:${id}`;
       this._stores.set(id, store);
     }
     return store;
@@ -134,7 +158,16 @@ export class Roster {
   }
 
   groupMembers(id) {
-    return readJson(path.join(this.p.agentDir(id), 'group.json'), { memberIds: [] })?.memberIds ?? [];
+    const file = path.join(this.p.agentDir(id), 'group.json');
+    const saved = readJson(file, null);
+    if (Array.isArray(saved?.memberIds)) return saved.memberIds;
+    const legacy = this.profile(id)?.memberIds;
+    if (Array.isArray(legacy)) {
+      const members = [...new Set(legacy)].filter((member) => this.exists(member));
+      writeJson(file, { version: 1, memberIds: members });
+      return members;
+    }
+    return [];
   }
 
   setGroupMembers(id, memberAgentIds) {
@@ -148,6 +181,7 @@ export class Roster {
   }
 
   create(profileInput = {}, { id = randomUUID(), activate = true } = {}) {
+    if (profileInput.isGroup === true) return this.createGroup({ ...profileInput, id, memberAgentIds: profileInput.memberIds ?? profileInput.memberAgentIds ?? [] });
     const profile = { ...DEFAULT_PROFILE, ...profileInput };
     ensureAgentDirs(this.p, id);
     writeJson(this.p.agentProfile(id), profile);
@@ -175,6 +209,7 @@ export class Roster {
   update(id, patch) {
     const profile = this.profile(id);
     if (!profile) throw new Error(`no such agent: ${id}`);
+    if (profile.isGroup === true && Array.isArray(patch.memberIds)) this.setGroupMembers(id, patch.memberIds);
     const next = { ...profile, ...patch };
     writeJson(this.p.agentProfile(id), next);
     const store = this.store(id);
@@ -278,9 +313,15 @@ export class Roster {
     return file;
   }
 
-  appendMemory(id, text, { kind = 'note' } = {}) {
+  scopedMemoryFile(id, conversationId) {
+    const key = createHash('sha256').update(conversationId).digest('hex');
+    return path.join(this.p.agentMemory(id), 'conversations', `${key}.md`);
+  }
+
+  appendMemory(id, text, { kind = 'note', conversationId = null } = {}) {
     const stamp = new Date().toISOString();
-    const file = kind === 'profile' ? this.p.agentMemoryProfile(id) : this.logFile(id);
+    const isolated = conversationId && conversationId !== `dm:${id}`;
+    const file = isolated ? this.scopedMemoryFile(id, conversationId) : kind === 'profile' ? this.p.agentMemoryProfile(id) : this.logFile(id);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `\n- [${kind}] ${stamp} ${text.trim()}\n`, 'utf8');
     return file;
@@ -292,7 +333,13 @@ export class Roster {
     return path.join(dir, `${new Date().toISOString().slice(0, 10)}.md`);
   }
 
-  readMemoryAll(id) {
+  readMemoryAll(id, { conversationId = null } = {}) {
+    if (conversationId && conversationId !== `dm:${id}`) {
+      const file = this.scopedMemoryFile(id, conversationId);
+      const scoped = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+      if (this.profile(id)?.shareMemoryAcrossConversations !== true) return scoped;
+      return [this.readMemoryAll(id), scoped].filter(Boolean).join('\n');
+    }
     const parts = [this.readMemory(id)];
     const logDir = this.p.agentMemoryLog(id);
     if (fs.existsSync(logDir)) {

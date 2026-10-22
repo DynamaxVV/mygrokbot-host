@@ -12,12 +12,12 @@ import { Roster } from './roster.mjs';
 import { SkillCatalog, SEED_SKILLS } from './skills.mjs';
 import { ToolRuntime } from './tools.mjs';
 import { TurnEngine } from './engine.mjs';
+import { TaskDispatcher } from './tasks.mjs';
 import { Routines } from './routines.mjs';
 import { RoomTurns } from './room.mjs';
 import { ServerAgentProxy, createLocalTemporalTransport } from './proxy.mjs';
 import { createGateway } from './gateway.mjs';
 import { setAgentBinding } from './providers/bindings.mjs';
-import { expireAllPending } from './review.mjs';
 import { loadSecretsIntoEnv } from './secrets.mjs';
 import { ensureDirs, paths, readJson, resolveDataRoot, writeJson } from './paths.mjs';
 
@@ -34,7 +34,7 @@ const DEFAULT_SETTINGS = {
   egressTunnelEnabled: false,
 };
 
-export function createHost({ root = resolveDataRoot(), env = process.env, log = () => {}, seed = true } = {}) {
+export function createHost({ root = resolveDataRoot(), env = process.env, log = () => {}, seed = true, recover = true } = {}) {
   // Keys stored by the desktop app (or `mgb secrets`) live in <root>/secrets/env.json.
   // Load them before anything resolves a binding, so every entry point behaves the same.
   loadSecretsIntoEnv(root);
@@ -78,6 +78,22 @@ export function createHost({ root = resolveDataRoot(), env = process.env, log = 
   const routines = new Routines({ p, roster, engine, log });
   routines.observe(bus);
   const rooms = new RoomTurns({ roster, engine, bus, proxy, log });
+  engine.proxy = proxy;
+  engine.rooms = rooms;
+  const tasks = new TaskDispatcher({ engine, store: engine.execution, bus, roster });
+  engine.tasks = tasks;
+  let recovered = false;
+  const resume = () => {
+    if (recovered) return;
+    recovered = true;
+    engine.recover();
+    const recovery = rooms.recover?.();
+    if (recovery) {
+      engine._background.add(recovery);
+      recovery.catch((error) => log('room.recovery.error', { error: error.message })).finally(() => engine._background.delete(recovery));
+    }
+  };
+  if (recover) resume();
   const gateway = createGateway({ p, roster, catalog, engine, tools, bus, routines, rooms, proxy, log });
 
   return {
@@ -91,18 +107,21 @@ export function createHost({ root = resolveDataRoot(), env = process.env, log = 
     engine,
     routines,
     rooms,
+    tasks,
     proxy,
     gateway,
+    resume,
     log,
     hostSettings: () => readJson(p.settings, DEFAULT_SETTINGS) ?? DEFAULT_SETTINGS,
     // Startup: cards left pending by a previous process have no live resolver, so
     // they are expired rather than left clickable.
     expirePendingApprovals() {
-      return expireAllPending({ roster, bus });
+      return engine.expirePendingApprovals();
     },
     async listen(opts = {}) {
+      resume();
       const token = opts.token ?? readJson(p.gateway, {})?.token ?? null;
-      const expired = expireAllPending({ roster, bus });
+      const expired = engine.expirePendingApprovals();
       if (expired > 0) log('approvals.expired', { count: expired });
       const discovery = await gateway.listen({ ...opts, token });
       const tz = (readJson(p.settings, DEFAULT_SETTINGS) ?? DEFAULT_SETTINGS).userTimeZone ?? 'UTC';
@@ -111,6 +130,7 @@ export function createHost({ root = resolveDataRoot(), env = process.env, log = 
     },
     async close() {
       routines.stop();
+      await engine.close();
       await gateway.close();
       roster.closeStores();
     },
@@ -119,7 +139,7 @@ export function createHost({ root = resolveDataRoot(), env = process.env, log = 
 
 // First-run bootstrap: one bot that is useful immediately, plus a written config.
 export function bootstrap({ root = resolveDataRoot(), botName = 'Main Bot', model = null, baseUrl = null, apiKeyEnv = null } = {}) {
-  const host = createHost({ root });
+  const host = createHost({ root, recover: false });
   let agents = host.roster.list();
   if (!agents.length) {
     agents = [

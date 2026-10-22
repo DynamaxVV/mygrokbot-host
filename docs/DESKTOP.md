@@ -1,85 +1,58 @@
-# 桌面端（macOS）
+# macOS 桌面端
 
-用 Electron 把现有的 Web 客户端包成一个 .app。**没有第二套后端**：Electron 主进程就是
-运行 gateway 的那个 Node，所以不存在 sidecar、IPC 桥或端口握手。
+桌面端使用 Electron 复用现有 Gateway 与 Web 界面：主进程启动后端，BrowserWindow 访问 loopback URL。安装、初始化、独立数据根和完整构建命令见[构建与启动指南](BUILD_AND_RUN.md)。
 
-## 为什么能这样
+## 开发与打包
 
-后端依赖 `node:sqlite` 的 `DatabaseSync`，这是 Node 22.5 引入、24 才稳定的内置模块。
-实测确认：
-
-```
-Electron 45.0.0  →  Node 24.22.0
-node:sqlite      →  建表 / 插入 / 查询 全部可用
-```
-
-Electron 41 起都带 Node 24，所以主进程可以直接 `import { createHost }`。
-
-## 结构
-
-```
-desktop/main.mjs        Electron 主进程：起服务 → 开窗口 → 托盘
-src/**                  后端（原样复用）
-src/ui/**              Web 客户端（原样复用）
-```
-
-启动流程：
-
-1. `createHost()` 打开数据根（默认 `~/.mygrokbot`）
-2. `gateway.listen({ port: 0, host: '127.0.0.1' })` —— 端口由系统分配
-3. `BrowserWindow.loadURL('http://127.0.0.1:<port>/')`
-4. 托盘常驻；关窗口不退出（routines 与队列需要进程活着）
-
-## 命令
+在项目根目录执行：
 
 ```bash
-npm run desktop     # 开发模式直接跑
-npm run dist:mac    # 只出 .app（dist/mac-arm64/MyGrokbot.app）
-npm run dist:dmg    # 出 DMG + zip
+npm ci
+node bin/mgb.mjs init --bot "Main Bot"
+npm run desktop
 ```
 
-## 体积
+已有数据可跳过 init；依赖已安装且锁文件不变时可跳过 npm ci。模型通过界面设置配置。
 
-| 项 | 大小 |
-| --- | --- |
-| `MyGrokbot.app` | **245 MB** |
-| DMG | **112 MB** |
-| zip | 112 MB |
-| 其中我们的代码（asar） | ~1.2 MB |
-
-244 MB 是 Electron 框架本体（Chromium + V8），无法通过配置继续压缩。已经做的裁剪：
-
-- `electronLanguages: ['en', 'zh_CN']` —— 只留两个语言包
-- `asar: true` —— 代码打包成单文件
-- `files` 白名单 —— 只打 `desktop/`、`src/`、`bin/`、`package.json`，不含 tests、docs、`.md`
-
-如果将来体积成为硬指标，唯一有效的路径是换 Tauri（壳 ~15 MB）并把后端编成 Node SEA
-单文件，架构见 [../README.md](../README.md) 的讨论记录。
-
-## 分发
-
-打包时 `identity: null`，所以是 **ad-hoc 签名 + 未公证**。任何 arm64 Mac 都能运行，但
-首次打开会被 Gatekeeper 拦一次。接收方二选一：
+生成 Apple Silicon App 并打开：
 
 ```bash
-# 方式一：右键 App → 打开 → 再点「打开」
-# 方式二：去掉隔离属性
-xattr -dr com.apple.quarantine /Applications/MyGrokbot.app
+npm run dist:mac -- --arm64
+open "dist/mac-arm64/MyGrokbot.app"
 ```
 
-如果对方要求“双击即开”，就需要 Apple Developer 账号做正式签名 + 公证。
+生成 DMG：
 
-## 已知限制
+```bash
+npm run dist:dmg
+ls -lh dist/*.dmg
+```
 
-- **不能上 Mac App Store**：`shell` 工具执行 `/bin/sh -lc`，沙箱会直接拒绝。
-- 未打包图标，用的是 Electron 默认图标（`build.mac.icon` 留空）。
-- 只有 arm64 target；要 Intel 版在 `build.mac.target.arch` 里加 `x64`。
+当前 target 仅配置 arm64 DMG，不同时生成 zip。产物大小取决于本次 Electron 与源码内容，旧版本的 245 MB App / 112 MB DMG 是历史记录，不是当前构建验收。
 
-## 与 launchd 的关系
+## 运行时结构
 
-两种启动方式二选一，不要同时开 —— 它们抢同一个数据根（`host.lock`、SQLite 句柄）。
+| 部分 | 实际职责 |
+|---|---|
+| desktop/main.mjs | 单实例、起 Gateway、窗口、托盘和退出入口 |
+| src/host.mjs | 组装执行协调、任务、工具、例行任务和 Gateway |
+| src/ui/index.html | 桌面与浏览器共用界面，无单独前端构建 |
+| Electron 内置 Node | 运行后端与 node:sqlite，不依赖用户终端的 Node 来运行打包 App |
 
-- **桌面版**：自己起 gateway，点托盘退出才释放
-- **launchd**：后台常驻，浏览器访问 8899
+本次核对的安装依赖为 Electron 45.0.0、Node 24.22.0、arm64。使用 `ELECTRON_RUN_AS_NODE=1` 完成了内存 SQLite 查询验证；这不等于本轮执行过完整 GUI 或打包验收。
 
-同时用会看到 `host.lock` 冲突。桌面版优先时先 `launchctl unload`。
+启动顺序为 createHost → host.listen → BrowserWindow.loadURL。默认端口随机分配，可以用 `MGB_DESKTOP_PORT` 指定。需要在修改源码后重启开发实例，没有 HMR。
+
+## 数据与退出
+
+默认使用 `~/.mygrokbot`，通过绝对路径 `MGB_DATA_ROOT` 改用其他数据根。窗口关闭时隐藏到托盘，Bot、队列和例行任务仍在运行；完全停止使用托盘或应用菜单的「退出」。
+
+Electron 使用应用单实例机制，但这不等于对 CLI/Web/launchd 的跨进程排他保护。同一个数据根选择一个执行器，不同时打开桌面版和独立 Gateway。`host.lock` 记录监听进程的 PID，不应把它视为完整分布式锁。
+
+升级前停止旧实例，备份完整数据根。新版本恢复接纳、交互、任务与待投递记录；未知工具效果进入 needs-reconciliation，详见[执行与迁移说明](EXECUTION.md)。
+
+## 分发配置
+
+当前 electron-builder 配置包含 desktop、src、bin 和包元数据，使用 asar，省略测试、文档与 Markdown，保留 en/zh_CN 语言包。当前未配置正式 Apple Developer 签名与公证，未配置自定义图标；Intel 分发需要显式配置或指定 x64 target 并另行验证。
+
+构建 App 不会自动替换 `/Applications` 中的旧版本。新产物先从 dist 启动核对，再按自己的安装方式替换；本轮文档整理没有执行打包、安装或图形界面操作。

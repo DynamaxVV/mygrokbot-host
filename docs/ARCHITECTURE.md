@@ -1,6 +1,26 @@
 # 架构与调度图
 
-全部依据线上 bundle `2e44baf`（sha256 `e2caadd9…`）与 `sand-d` 快照。图用 Mermaid；`docs/FLOW.md` 是文字版，本文是图版。
+## 当前本地架构（2026-10-22，P0/P1 后）
+
+当前执行协议以 [EXECUTION.md](EXECUTION.md) 为准；功能入口见 [CORE_FEATURES.md](CORE_FEATURES.md)，编译与启动见 [BUILD_AND_RUN.md](BUILD_AND_RUN.md)。下文线上 bundle 图与标记 **F** 是外部历史证据，标记 **M（历史）** 是早期映射，均不代表当前执行保证。
+
+| 层 | 当前实现 | 关键行为 |
+| --- | --- | --- |
+| 接入 | `gateway.mjs` / `host.mjs` | RPC 与 SSE；群入口先于单 Bot Proxy 路由 |
+| 执行协调 | `execution.mjs` / `runtime.mjs` | 主机级 `execution.db` 以 WAL/FULL 保存接纳、Run、交互、任务与 outbox |
+| 调度 | `scheduler.mjs` | 每 Bot 三 lane、单执行段；watchdog 请求取消，宽限期后记 `stuck` 并继续占槽 |
+| 会话 | `conversation.mjs` / `db.mjs` | `dm:`、`group:`、`task:` 分区；输入水位固定；群只有一份业务历史 |
+| 交互 | `runtime.mjs` | 卡片绑定 Run/callId；批准后同 Run 的新 segment 入队，工具与模型续跑均串行 |
+| 群组 | `room.mjs` | fan-out、@ 定向、coordinated、round_robin；按成员 nonce/runId 查结果和取消 |
+| 派工 | `tasks.mjs` | 本地 `delegate_task` 持久依赖与父恢复；普通 `message_agent` 不保证回复 |
+
+`send-acceptance.json` 保留作兼容导入与诊断，已由协调库承担 Run 状态权威。崩溃前仍在执行的工作转为 `needs-reconciliation`，不自动重放工具；有持久恢复点的待决交互可恢复，无绑定旧卡过期。任务等待和交互等待释放实际执行槽，恢复始终重新排队。
+
+回归基线为 **174 项：171 通过、3 跳过**；这是此前完整代码回归的结果，本次文档整理未新增 GUI 或打包验证。
+
+## 历史重建与早期映射
+
+以下历史图依据线上 bundle `2e44baf`（sha256 `e2caadd9…`）与 `sand-d` 快照。图用 Mermaid；`docs/FLOW.md` 是文字版，本文是图版。
 
 图例：**实线** = 必然发生；**虚线** = 条件/异步；**灰色** = 线上存在但个人版未实现。
 
@@ -201,7 +221,7 @@ flowchart TB
 | 图片 | 1:1 可投；群组拒绝并回注说明 |
 | priority | 仅 1:1；跨机也不支持，降级为普通发送 |
 
-**M** 已按此实现 `sendToAgent` / `postToGroup` / 幂等账本；测试覆盖 priority 唤醒、held 不唤醒、幂等、群组只发文本。
+**M（历史）** 已按此实现 `sendToAgent` / `postToGroup` / 幂等账本；测试覆盖 priority 唤醒、held 不唤醒、幂等、群组只发文本。
 
 ---
 
@@ -261,7 +281,7 @@ sequenceDiagram
 
 **F** 群组消息**纯文本**，图片会被拒并附说明；**priority 对群组无效**（不会打断成员）。
 
-**M** 群组用 `group.json` 的 `memberIds`，`isGroup: true` 标记；广播时逐成员写 transcript，不唤醒。
+**M（历史）** 群组用 `group.json` 的 `memberIds`，`isGroup: true` 标记；广播时逐成员写 transcript，不唤醒。
 
 ---
 
@@ -295,28 +315,7 @@ flowchart TB
 
 ## 8. 时间线：一次典型的多 bot 协作
 
-```mermaid
-gantt
-    title 主 bot 派活给两个 worker（示意）
-    dateFormat X
-    axisFormat %s
-
-    section 用户
-    发任务给主 bot           :a1, 0, 2
-
-    section 主 bot
-    接纳 + 入队（user lane） :a2, 1, 3
-    拆解 + 派活              :a3, 3, 9
-    汇总                     :a6, 14, 4
-
-    section Worker A
-    priority 唤醒 + 执行     :a4, 4, 6
-    回复（异步）             :a5, 10, 2
-
-    section Worker B
-    held（不唤醒）           :b1, 4, 1
-    下次回合读取             :b2, 11, 3
-```
+历史时间线：用户派活给主 Bot；主 Bot 唤醒 Worker A，同时向 Worker B 留下 held 通知；A 的回复稍后抵达，B 在下次回合读取通知，主 Bot 再汇总。这里表达异步顺序，不作为执行时限。
 
 关键：**派活是异步的**。主 bot 发完 `SendToAgent` 立刻继续，不阻塞等结果；worker 的回复作为新消息异步唤醒主 bot。
 
@@ -358,7 +357,7 @@ sequenceDiagram
 
 ---
 
-## 10. 个人版与线上的映射
+## 10. 早期个人版与线上的映射（历史快照）
 
 | 环节 | 线上 `2e44baf` | mygrokbot | 状态 |
 | --- | --- | --- | --- |

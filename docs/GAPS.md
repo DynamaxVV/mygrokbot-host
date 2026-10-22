@@ -1,6 +1,24 @@
 # 功能缺口分析
 
-> **状态更新（2026-10-22）**：P0 与 P1 全部完成，P2 除「多机代理」外全部完成。
+## 当前能力与剩余验证（2026-10-22，执行 P0/P1 后）
+
+这里的“执行 P0/P1”指会话、取消、审批与可靠派工改造；下文旧 P0/P1/P2 是早期 UI 功能分级，两者不是同一份计划。当前协议见 [EXECUTION.md](EXECUTION.md)，核心功能见 [CORE_FEATURES.md](CORE_FEATURES.md)，启动与打包见 [BUILD_AND_RUN.md](BUILD_AND_RUN.md)。
+
+| 领域 | 当前状态 | 剩余边界 |
+| --- | --- | --- |
+| 接纳与恢复 | `execution.db` 统一持久接纳、Run、交互、任务与 outbox | 执行中崩溃且副作用结果未知时为 `needs-reconciliation`，不自动重放 |
+| 取消与审批 | 单执行段、取消退出屏障、同 Run 新 segment 排队恢复 | 完全脱离受管理进程组且未被观察到的后台进程没有通用追踪保证 |
+| 会话隔离 | 群单权威历史；私聊/群/任务上下文与记忆默认分区 | workspace 仍共享；显式开启记忆共享会改变默认隔离 |
+| 可靠派工 | 本地 `delegate_task`、依赖持久化、父 Run 自动恢复 | 非本地目标返回 `task/agent-unavailable`；每根链默认 4 活动/2 层/12 总任务 |
+| 群策略 | fan-out、显式 @、coordinated、round_robin；精确 Run 取消 | 真实远端服务的身份/结果契约仍需与实际部署联调 |
+| 桌面端 | 已有 Electron 入口与 app/DMG 打包脚本 | 本次未重做打包、安装与桌面 GUI 验收；不再按“待选 Tauri”规划 |
+| 验证 | 此前全量 174 项中 171 pass、3 skip | 真实模型默认 opt-in；执行改造后的人工 GUI 清单见 [ACCEPTANCE.md](ACCEPTANCE.md) |
+
+本项目仍不是线上 212 个方法与云端运行环境的完整复刻。方法数量不是能力验收替代品，接口以当前 gateway 导出为准。外部 bundle 研究保留在 [PARITY.md](PARITY.md) 与架构历史章节中。
+
+## 早期 UI 缺口与完成记录（历史）
+
+> **早期 UI 状态更新（2026-10-22，历史）**：P0 与 P1 全部完成，P2 除「多机代理」外全部完成。
 > 逐项验收结果见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 已实现 70+ 个 gateway 方法。真机 212 个。下表保留为历史对照：
@@ -30,7 +48,7 @@
 11. **媒体预览**（图片消息渲染）
 
 ## P3 — 平台能力
-12. **Tauri 打包**（当前是浏览器版）
+12. **桌面打包**（早期计划 Tauri，后续已采用 Electron）
 13. **多机代理**（`server-agent-proxy` 已有骨架）
 14. **Webhook 触发 routine**（`fireRoutineWebhook` 已有，未文档化）
 
@@ -65,9 +83,9 @@
 | 10 | 分支会话 | ✅ 复制到新 bot，名称去重 |
 | 11 | blobs 加密持久化 | ✅ AES-256-GCM |
 
-### P3 — 未做
+### P3 — 当时尚未完成（历史）
 
 | # | 功能 | 说明 |
 | --- | --- | --- |
-| 12 | Tauri 打包 | 目前是浏览器版 |
+| 12 | 桌面打包 | 当时为浏览器版；后续已采用 Electron，当前见上表 |
 | 13 | 多机代理 | `server-agent-proxy` 骨架已有 |

@@ -1,0 +1,116 @@
+{
+  "reviewed_at": "2026-10-22T15:40:47.033372+08:00",
+  "source_head": "d498dd83dca901d8d2a7db6a40e1ecabc9e9a7c4",
+  "runtime": "v26.5.0",
+  "tracked_code_changes": [],
+  "files": [
+    {
+      "path": "src/engine.mjs",
+      "sha256": "ddc9f74e530ef34e5ee48fde6614d4dc8f8bc224f0b48ab1850aa74d278d855e"
+    },
+    {
+      "path": "src/scheduler.mjs",
+      "sha256": "f73002a35bb0b6a362deb310e1257d13690cc65c15b3c3082e629527f107828d"
+    },
+    {
+      "path": "src/room.mjs",
+      "sha256": "74c0dad61ed68a18c6b58a23f0a0e3dc2392bece19a022084b66616c16153fba"
+    },
+    {
+      "path": "src/acceptance.mjs",
+      "sha256": "809f6fc628cec79b3ac4fc53d8de9c4e6b8cb518a64d76d9dffdd243a9766508"
+    },
+    {
+      "path": "src/db.mjs",
+      "sha256": "7bded38c193a44d809d5f77ab56c7e51c4a4c297f985f520004cd6a87b107023"
+    },
+    {
+      "path": "src/entries.mjs",
+      "sha256": "6cc3c8ceaebfb6587e450509912fe95a99a5d71f050fb450af130550fd558432"
+    },
+    {
+      "path": "src/gateway.mjs",
+      "sha256": "3fff37300c6aa67b218e6245778a7ef20fe50c8c552d419131bd2a9423d674b0"
+    },
+    {
+      "path": "src/tools.mjs",
+      "sha256": "e29e405a5f1fa29e57565c94ab990bdb307f9c38d3a15d506154b20577cbf90d"
+    },
+    {
+      "path": "src/bus.mjs",
+      "sha256": "17a39b956dc8b886349a45dfebcc1a5cf838122edfd1c4e0f1efb14455d42c69"
+    },
+    {
+      "path": "src/review.mjs",
+      "sha256": "06ac7e26a4e7ce95a7f8272e5dd523f7b8e32492a5a4deb322f3deba61679264"
+    },
+    {
+      "path": "src/roster.mjs",
+      "sha256": "0cf34f736800f6bd0b2550358b006ab143463743019c654d2ee42efab4d675a8"
+    },
+    {
+      "path": "src/proxy.mjs",
+      "sha256": "e31a164fb146ac1fbaa5fe7d77bc7740eeaebb233c5c4bccf79bc85ead022baa"
+    },
+    {
+      "path": "src/host.mjs",
+      "sha256": "1a5205fee941ff7f9e1089abdf9d525f4dab4b0a1f0db26a9c676053b16b7a16"
+    },
+    {
+      "path": "src/providers/bindings.mjs",
+      "sha256": "efad8f5d92b828a18a17de39cdc57ee672e2d5bc861118fecbc19442e6e46200"
+    },
+    {
+      "path": "src/providers/transport.mjs",
+      "sha256": "a55f737585c8bf05e9fe484afb4280b09765c32c06c308dba71ae92df6bc7df5"
+    },
+    {
+      "path": "src/ui/index.html",
+      "sha256": "979fab93433a4e3a3a295791cf3ef7eb6d8a7b76f29037dd3dcfe56b579beadd"
+    },
+    {
+      "path": "package.json",
+      "sha256": "ae2dc22d07b65477561cba239f94d83807bd5896e7b5b6537b2eba71b9e38064"
+    },
+    {
+      "path": "analysis/review-2026-10-22/main-repro.test.mjs",
+      "sha256": "c241aa43d88ad25dfa004ab77907058575355eabf9ca4526a0bcde665fccd4e8"
+    },
+    {
+      "path": "analysis/review-2026-10-22/main-observations.json",
+      "sha256": "81f8d99cea5896654df150c83f219b26adbf519a5842f26e945f790c62409eb0"
+    },
+    {
+      "path": "analysis/review-2026-10-22/main-repro.log",
+      "sha256": "bcf2a357545af692739b124b7c7d2242ead6d30391d77a943cb8b87274899d33"
+    },
+    {
+      "path": "analysis/review-2026-10-22/concurrency-review-harness.mjs",
+      "sha256": "ed17068c3403ab059b8ab4002ff7bbec8a09ef8602f0be8cfc723540cc34dd24"
+    },
+    {
+      "path": "analysis/review-2026-10-22/concurrency-review-results.json",
+      "sha256": "0a3476d88a95bc66097e354a57750fb4708e8e284d0457de416f7188124f2584"
+    },
+    {
+      "path": "analysis/review-2026-10-22/concurrency-review-run.log",
+      "sha256": "68b2359d26ab0bcc3e0a33a130d8746ce59d2f751d84f933944979fc487c90ae"
+    },
+    {
+      "path": "analysis/review-2026-10-22/baseline.log",
+      "sha256": "e5836f758eed7756979ede339031b0bd7327445bf04c4d65f788228f1ca5a7cd"
+    },
+    {
+      "path": "analysis/review-2026-10-22/scope.md",
+      "sha256": "a7645c64398b48986c54863da8b5a25bfebc846645f8fac05ac549e2ef078625"
+    },
+    {
+      "path": "docs/2026-10-22_architecture-mygrokbot-report.md",
+      "sha256": "0c956fe6e1af9c96bcfaca173445d02efa3021e101de7a47949f7d6dcfca2fb8"
+    },
+    {
+      "path": "docs/REVIEW_2026-10-22_MULTIBOT.md",
+      "sha256": "9bb618ef1af548aa354b7ac10adbad9814785062afe8bb8f6dd7d94941023375"
+    }
+  ]
+}

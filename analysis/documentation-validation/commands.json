@@ -1,0 +1,26 @@
+{
+  "node": "v26.5.0",
+  "checks": [
+    {
+      "command": "node bin/mgb.mjs init --bot Main Bot",
+      "exitCode": 0
+    },
+    {
+      "command": "node bin/mgb.mjs doctor",
+      "exitCode": 0
+    },
+    {
+      "command": "node bin/mgb.mjs agents ls",
+      "exitCode": 0
+    },
+    {
+      "command": "node bin/mgb.mjs serve --host 127.0.0.1 --port 0",
+      "health": true,
+      "listTasks": true
+    }
+  ],
+  "shutdown": {
+    "code": 0,
+    "signal": null
+  }
+}

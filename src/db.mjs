@@ -65,6 +65,10 @@ CREATE INDEX IF NOT EXISTS idx_transcript_window
 CREATE INDEX IF NOT EXISTS idx_transcript_branched
   ON transcript_entries(seq, entry)
   WHERE COALESCE(json_extract(entry, '$.branched'), 0) = 1;
+CREATE INDEX IF NOT EXISTS idx_transcript_conversation
+  ON transcript_entries(json_extract(entry, '$.conversationId'), seq);
+CREATE INDEX IF NOT EXISTS idx_transcript_display_conversation
+  ON transcript_entries(COALESCE(json_extract(entry, '$.displayConversationId'), json_extract(entry, '$.conversationId')), seq);
 CREATE INDEX IF NOT EXISTS idx_automation_completion_inbox_pending
   ON automation_completion_inbox(seq)
   WHERE acknowledged = 0;
@@ -196,11 +200,13 @@ export class AgentStore {
 
   // ---- transcript -------------------------------------------------------
   appendEntry(entry) {
-    // While a hidden turn runs, every row it writes inherits the flag. Doing it here is
-    // what keeps a group-triggered reasoning block out of the agent's own chat *as it
-    // streams*, not only after the turn ends.
-    const row = this.hideWrites && !entry.hidden ? { ...entry, hidden: true } : entry;
-    entry.hidden = row.hidden;
+    // Visibility is explicit per entry. A running group must never affect a concurrent
+    // private admission or a peer delivery into this same physical store.
+    const row = { ...entry };
+    if (!row.conversationId && this.defaultConversationId) {
+      row.conversationId = row.hidden ? `legacy:unknown:${this.defaultConversationId}` : this.defaultConversationId;
+      row.schemaVersion = 2;
+    }
     const seq = Number(this.stmt('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM transcript_entries').get().next);
     this.stmt('INSERT INTO transcript_entries (seq, id, entry) VALUES (?, ?, ?)').run(
       seq,
@@ -208,6 +214,27 @@ export class AgentStore {
       JSON.stringify(row),
     );
     return seq;
+  }
+
+  appendEntryOnce(entry) {
+    const existing = this.getEntry(entry.id);
+    if (existing) return { seq: existing.seq, replayed: true };
+    return { seq: this.appendEntry(entry), replayed: false };
+  }
+
+  readConversation({ conversationId, beforeSeq = null, throughSeq = null, limit = 2000, includeToolCalls = true, display = false, descending = false } = {}) {
+    const field = display
+      ? "COALESCE(json_extract(entry, '$.displayConversationId'), json_extract(entry, '$.conversationId'))"
+      : "json_extract(entry, '$.conversationId')";
+    const predicates = [`${field} = ?`, "COALESCE(json_extract(entry, '$.branched'), 0) != 1"];
+    const params = [conversationId];
+    if (beforeSeq != null) { predicates.push('seq < ?'); params.push(beforeSeq); }
+    if (throughSeq != null) { predicates.push('seq <= ?'); params.push(throughSeq); }
+    if (!includeToolCalls) predicates.push("json_extract(entry, '$.kind') != 'tool-call'");
+    const sql = `SELECT seq, entry FROM transcript_entries WHERE ${predicates.join(' AND ')} ORDER BY seq DESC LIMIT ?`;
+    const rows = this.stmt(sql).all(...params, Math.max(1, Math.min(Number(limit) || 2000, 10000)))
+      .map((row) => ({ seq: row.seq, ...JSON.parse(row.entry) }));
+    return descending ? rows : rows.reverse();
   }
 
   // Window read: everything except tool-call rows and branched rows, matching

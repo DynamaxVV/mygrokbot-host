@@ -176,6 +176,15 @@
     width: 13px; height: 13px; color: var(--faint); pointer-events: none; }
   #agents { overflow: auto; padding: 8px 8px 10px; flex: 1; }
 
+  /* Unread marker: a small accent dot on the trailing edge of the row. */
+  /* Unread badge rides the avatar corner, clear of the name and timestamp. */
+  .agent .dot { position: absolute; left: 38px; top: 8px;
+    width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    display: none; box-shadow: 0 0 0 2px var(--rail); }
+  .agent.has-unread .dot { display: block; }
+  .agent.has-unread .name { font-weight: 700; }
+  /* The time slot keeps its width; only the dot is gone from the row. */
+
   /* Transcript matches under the roster. */
   .hitsec { padding: 10px 10px 4px; font-size: 10.5px; font-weight: 700;
     letter-spacing: .4px; color: var(--faint); }
@@ -256,8 +265,8 @@
     box-sizing: border-box; line-height: 1; }
   .avatar.group.n4 .gmore { right: -1%; bottom: -1%; }
 
-  .agent { display: flex; gap: 10px; align-items: center; padding: 9px 8px;
-    border-radius: 9px; cursor: pointer; }
+  .agent { position: relative; display: flex; gap: 10px; align-items: center;
+    padding: 9px 8px; border-radius: 9px; cursor: pointer; }
   .agent:hover { background: rgba(0,0,0,.035); }
   .agent:hover { background: var(--rail-hover); }
   /* selected = grey, not white-on-grey */
@@ -343,7 +352,8 @@
   /* The stream owns the whole column (under the composer too). The composer is an
      overlay, so messages scroll behind it instead of being clipped above it. */
   #log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
-    padding: 8px 0 96px; display: flex; flex-direction: column; align-items: stretch;
+    padding: 8px 0 var(--composer-space, 128px);
+    display: flex; flex-direction: column; align-items: stretch;
     background: transparent; }
 
   /* The blend above mixes with the element's own background-color, so the pattern's
@@ -407,6 +417,15 @@
   .cardwrap + .msg { margin-block-start: 12px; }
   .msg.group-mid .avatar, .msg.group-end .avatar { visibility: hidden; }
   .msg .sname { font-size: 11px; font-weight: 600; color: var(--dim); padding: 0 2px 2px 2px; }
+
+  /* Peer wake: incoming mail from another bot, visually distinct from the operator's
+     own messages and from this bot's answer. */
+  .msg.peer .peerhead { display: inline-flex; align-items: center; gap: 5px;
+    align-self: flex-start; font-size: 10.5px; font-weight: 700; letter-spacing: .2px;
+    color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-radius: 7px; padding: 2px 8px; margin-bottom: 3px; }
+  .msg.peer .bubble { border: 1px dashed color-mix(in srgb, var(--accent) 40%, var(--line));
+    background: color-mix(in srgb, var(--accent) 6%, var(--bubble-in)); }
   .msg .avatar { flex: none; width: 30px; height: 30px; border-radius: 9px; font-size: 11px;
     align-self: flex-end; margin-bottom: 2px; }
   /* Both sides share the same usable width (tweb: the bubble is capped by the message
@@ -461,6 +480,25 @@
     border-color: rgba(255,255,255,.28); color: #fff; }
   .msg.mine .bubble .afile:hover { background: rgba(255,255,255,.24); }
 
+  /* Markdown inside bubbles. */
+  .btext strong { font-weight: 700; }
+  .btext em { font-style: italic; }
+  .btext code { font-family: var(--mono); font-size: .92em; padding: 1px 4px;
+    border-radius: 5px; background: rgba(0,0,0,.06); }
+  .msg.mine .btext code { background: rgba(255,255,255,.18); }
+  .btext pre { margin: 6px 0; padding: 8px 10px; border-radius: 9px; overflow-x: auto;
+    background: rgba(0,0,0,.05); }
+  .msg.mine .btext pre { background: rgba(255,255,255,.14); }
+  .btext pre code { background: transparent; padding: 0; font-size: 12px; }
+  .btext ul, .btext ol { margin: 4px 0; padding-inline-start: 20px; }
+  .btext li { margin: 1px 0; }
+  .btext .md-h { display: block; font-weight: 700; margin: 8px 0 2px; }
+  .btext .md-q { display: block; padding-inline-start: 9px; margin: 3px 0;
+    border-inline-start: 2px solid var(--line-strong); color: var(--dim); }
+  .btext .md-line { display: block; }
+  .btext a { color: var(--accent); text-decoration: none; }
+  .btext a:hover { text-decoration: underline; }
+
   .md-rule { display: block; height: 1px; background: var(--line-strong);
     margin: 10px 0; opacity: .8; }
   .bubble .btext { white-space: pre-wrap; font-size: 16px; line-height: 1.3125;
@@ -478,10 +516,12 @@
   /* The reserved corner is measured per bubble in JS: a bare "04:13" needs far less room
      than "04:13 · 3076 tok · 4 tok/s", and a fixed slot let the text run under the stamp. */
   .bubble { --slot-w: 54px; }
-  .bubble.has-time .btext::after {
-    content: ''; display: inline-block; width: var(--slot-w); height: 0;
-    vertical-align: baseline;
-  }
+  /* The spacer keeps the last text line from running under the stamp. When it wraps it
+     must not create a full-height empty line, so it is zero-height AND zero-line-height;
+     the bubble reserves a slim strip instead. */
+  /* Only bubbles whose last line has no room for the stamp get a reserved strip. The
+     measurement happens in JS (a Range over the text gives the last line box). */
+  .bubble.has-time.need-slot { padding-bottom: 16px; }
   .msg.mine { flex-direction: row-reverse; align-self: flex-end;
     padding-inline-start: calc(14px + 38px); padding-inline-end: 14px; }
   .msg.mine .stack { align-items: flex-end; }
@@ -501,9 +541,10 @@
     cursor: pointer; text-transform: none; letter-spacing: 0; }
   button.mini:hover { color: var(--text); border-color: var(--line-strong); }
 
-  .pmark { align-self: flex-start; font-size: 10.5px; color: var(--faint);
-    letter-spacing: .3px; margin-bottom: 2px; padding: 1px 6px; border-radius: 5px;
-    background: rgba(0,0,0,.04); }
+  .pmark { align-self: flex-start; font-size: 10.5px; font-weight: 700;
+    color: var(--accent); letter-spacing: .3px; margin-bottom: 2px;
+    padding: 2px 7px; border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 14%, transparent); }
   .msg.mine .pmark { display: none; }
   .msg .stamp { position: absolute; inset-inline-end: 9px; bottom: 4px;
     display: flex; align-items: center; gap: 3px;
@@ -1256,6 +1297,34 @@ const $ = (id) => document.getElementById(id);
 
 let agents = [];
 let activeId = null;
+let selectionVersion = 0;
+let transcriptVersion = 0;
+const waitingConversations = new Set();
+const sendAttempts = new Map();
+const composerStates = new Map();
+let restoringComposer = false;
+const sendingConversations = new Set();
+function conversationFor(id = activeId) {
+  if (!id) return null;
+  if (/^(dm|group|task):/.test(id)) return id;
+  return `${agents.find((a) => a.id === id)?.isGroup ? 'group' : 'dm'}:${id}`;
+}
+function eventConversation(ev) {
+  return ev.displayConversationId ?? ev.conversationId;
+}
+function matchesConversation(ev) {
+  const conversationId = eventConversation(ev);
+  return conversationId ? conversationId === conversationFor() : (!ev.agentId || ev.agentId === activeId);
+}
+function invalidateSendAttempt() {
+  sendAttempts.delete(conversationFor());
+}
+function refreshPending(agentId = activeId, conversationId = conversationFor(agentId)) {
+  const version = selectionVersion;
+  return rpc('getPendingEntryIds', { agentId, conversationId }).then((p) => {
+    if (version === selectionVersion && conversationId === conversationFor()) pendingIds = new Set(p ?? []);
+  }).catch(() => {});
+}
 let entries = [];
 let binding = {};
 let uimap = null;
@@ -1570,11 +1639,14 @@ function renderRoster() {
       <span class="meta">
         <span class="row1"><span class="name"></span><span class="time"></span></span>
         <span class="sub"></span>
-      </span>`;
+      </span>
+      <span class="dot" aria-label="有新回复"></span>`;
     el.querySelector('.name').textContent = a.name;
     el.querySelector('.sub').textContent = (a.lastText || a.description || a.id.slice(0, 8))
       .replace(/\s+/g, ' ');
     el.querySelector('.time').textContent = a.proxied ? 'remote' : fmtRelative(a.lastActivityMs);
+    // A dot marks a conversation with something the operator has not looked at yet.
+    el.classList.toggle('has-unread', (a.unread ?? 0) > 0 && a.id !== activeId);
     el.onclick = () => selectAgent(a.id);
     box.appendChild(el);
   }
@@ -1962,6 +2034,41 @@ function nodeFor(entry) {
 
 // A model can echo its own reasoning marker into the visible text. Strip the marker
 // (keep the prose) so the stream never shows "</think:...>" to the operator.
+// Peer/group routing prefixes ("[agent]", "[to:X]", "[group:Y]") are for the model, not
+// for the reader.
+function stripTransport(text) {
+  let out = String(text ?? '');
+  const marker = /^\s*\[(agent|to:[^\]]*|group:[^\]]*)\]\s*/i;
+  // Markers stack ("[agent] [to:X] ..."), so peel them until none is left.
+  while (marker.test(out)) out = out.replace(marker, '');
+  return out.trim();
+}
+
+// Tool names are implementation detail. The prompt asks the model not to use them, but
+// when it does anyway the operator should still read plain language.
+// "用 message_user 给你发" reads fine once the verb+name pair is dropped; replacing the
+// name with a phrase instead produced sentences like "已给你发消息 给主子发过去啦".
+const TOOL_WORDS = [
+  [/(?:使用|用|通过|调用|借助)\s*message_user\s*/g, ''],
+  [/(?:使用|用|通过|调用|借助)\s*message_agent\s*/g, ''],
+  [/(?:使用|用|通过|调用|借助)\s*delegate_task\s*/g, ''],
+  [/(?:使用|用|通过|调用|借助)\s*(?:read_file|write_file|list_dir)\s*/g, ''],
+  [/message_user/g, '私信'],
+  [/message_agent/g, '消息'],
+  [/delegate_task/g, '任务'],
+  [/read_file/g, '读取文件'],
+  [/write_file/g, '写入文件'],
+  [/list_dir/g, '查看目录'],
+  [/\bask_user\b/g, '询问'],
+  [/recall_memory/g, '回忆记录'],
+  [/\bshell\b/g, '命令'],
+];
+function scrubToolNames(text) {
+  let out = String(text ?? '');
+  for (const [re, word] of TOOL_WORDS) out = out.replace(re, word);
+  return out;
+}
+
 function cleanText(text) {
   return String(text ?? '')
     .replace(/<\/?think:[0-9a-f-]+>/gi, '')
@@ -1972,25 +2079,118 @@ function cleanText(text) {
 
 // A message can contain markdown-ish separators the model writes ("---"). Rendering
 // them as literal dashes looked like a stray border; turn them into a real rule.
+// Minimal markdown for bubbles: emphasis, inline code, fenced blocks, headings,
+// quotes, lists and rules. Everything is built as DOM nodes — model output is untrusted,
+// so no innerHTML is used for the text itself.
 function renderRichText(target, raw) {
   const text = cleanText(raw);
-  // Only a line that is exactly a rule marks a section break; a `---` inside a YAML
-  // front-matter block (tool output) must stay verbatim.
-  if (!/^\s*-{3,}\s*$/m.test(text)) {
-    target.textContent = text;
-    return;
-  }
-  const parts = text.split(/^\s*-{3,}\s*$/m);
   target.textContent = '';
-  parts.forEach((part, i) => {
-    if (i > 0) {
+
+  const inline = (parent, src) => {
+    // **bold**, *italic*, `code`, [label](url) — one pass, longest markers first.
+    const re = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*]+\*)/g;
+    let last = 0;
+    for (let m = re.exec(src); m; m = re.exec(src)) {
+      if (m.index > last) parent.appendChild(document.createTextNode(src.slice(last, m.index)));
+      const tok = m[0];
+      if (tok.startsWith('**')) {
+        const b = document.createElement('strong');
+        b.textContent = tok.slice(2, -2);
+        parent.appendChild(b);
+      } else if (tok.startsWith('`')) {
+        const c = document.createElement('code');
+        c.textContent = tok.slice(1, -1);
+        parent.appendChild(c);
+      } else if (tok.startsWith('[')) {
+        const label = tok.slice(1, tok.indexOf(']'));
+        const href = tok.slice(tok.indexOf('](') + 2, -1);
+        if (/^https?:/i.test(href)) {
+          const a = document.createElement('a');
+          a.href = href; a.target = '_blank'; a.rel = 'noreferrer';
+          a.textContent = label;
+          parent.appendChild(a);
+        } else {
+          parent.appendChild(document.createTextNode(tok));
+        }
+      } else {
+        const em = document.createElement('em');
+        em.textContent = tok.slice(1, -1);
+        parent.appendChild(em);
+      }
+      last = m.index + tok.length;
+    }
+    if (last < src.length) parent.appendChild(document.createTextNode(src.slice(last)));
+  };
+
+  const lines = text.split('\n');
+  let list = null;
+  let code = null;
+  let fence = null;
+
+  for (const line of lines) {
+    if (fence) {
+      if (/^\s*```/.test(line)) {
+        code.textContent = code.textContent.replace(/\n$/, '');
+        fence = null; code = null;
+      } else {
+        code.textContent += `${line}\n`;
+      }
+      continue;
+    }
+    if (/^\s*```/.test(line)) {
+      fence = document.createElement('pre');
+      code = document.createElement('code');
+      fence.appendChild(code);
+      target.appendChild(fence);
+      list = null;
+      continue;
+    }
+    if (/^\s*-{3,}\s*$/.test(line)) {
       const hr = document.createElement('span');
       hr.className = 'md-rule';
       target.appendChild(hr);
+      list = null;
+      continue;
     }
-    const chunk = part.replace(/^\n+|\n+$/g, '');
-    if (chunk) target.appendChild(document.createTextNode(chunk));
-  });
+    const bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+    const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (bullet || numbered) {
+      if (!list || list.tagName !== (bullet ? 'UL' : 'OL')) {
+        list = document.createElement(bullet ? 'ul' : 'ol');
+        target.appendChild(list);
+      }
+      const li = document.createElement('li');
+      inline(li, (bullet ?? numbered)[1]);
+      list.appendChild(li);
+      continue;
+    }
+    list = null;
+    const heading = /^\s*(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      const h = document.createElement('span');
+      h.className = 'md-h';
+      inline(h, heading[2]);
+      target.appendChild(h);
+      continue;
+    }
+    const quote = /^\s*>\s?(.*)$/.exec(line);
+    if (quote) {
+      const q = document.createElement('span');
+      q.className = 'md-q';
+      inline(q, quote[1]);
+      target.appendChild(q);
+      continue;
+    }
+    if (!line.trim()) {
+      target.appendChild(document.createElement('br'));
+      continue;
+    }
+    const row = document.createElement('span');
+    row.className = 'md-line';
+    inline(row, line);
+    target.appendChild(row);
+  }
+  if (fence && code) code.textContent = code.textContent.replace(/\n$/, '');
 }
 
 // DSH: latestCompletedParagraphFirstLine / firstLine, then strip markdown emphasis.
@@ -2101,6 +2301,38 @@ function buildUnits(rows) {
 }
 
 // Follow the stream only when the reader is already at the bottom.
+// Keep the last bubble clear of the floating composer: reserve its measured height plus
+// a margin, and re-measure when the composer grows (attachments, reply bar, multiline).
+function syncComposerSpace() {
+  const comp = document.querySelector('.composer');
+  if (!comp) return;
+  const h = Math.round(comp.getBoundingClientRect().height);
+  document.documentElement.style.setProperty('--composer-space', `${h + 48}px`);
+  // The reserved strip changes the scroll range; keep the view pinned if it was there.
+  const log = $('log');
+  if (log && log.scrollHeight - log.scrollTop - log.clientHeight < 160) {
+    requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+  }
+}
+
+// Pinning has to survive late layout: fonts, avatars and the stamp measurement all grow
+// the content after the render, which used to leave the newest bubble sitting under the
+// composer until the operator scrolled by hand.
+// Re-measure every bubble's stamp slot. Cheap (a Range per bubble) and idempotent; run
+// it after renders and whenever late layout could have changed a width.
+function relayoutStamps() {
+  for (const el of document.querySelectorAll('.msg')) el._measureStamp?.();
+}
+
+function pinToBottom() {
+  const log = $('log');
+  const toEnd = () => { log.scrollTop = log.scrollHeight; };
+  toEnd();
+  requestAnimationFrame(() => { toEnd(); requestAnimationFrame(toEnd); });
+  setTimeout(toEnd, 80);
+  setTimeout(toEnd, 240);
+}
+
 function autoScroll() {
   const log = $('log');
   if (log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
@@ -2115,7 +2347,21 @@ function renderStream() {
   const log = $('log');
   // Entries flagged hidden belong to another surface (a group, for instance); they exist
   // in the transcript so the model can read them, but they never render here.
-  const visible = entries.filter((e) => !e.hidden);
+  // Collapse duplicate proactive notices: the same text sent twice within a few minutes
+  // is one notification, not two bubbles.
+  const seenProactive = new Map();
+  const visible = entries.filter((e) => {
+    if (e.hidden) return false;
+    if (e.proactive !== true) return true;
+    const text = String(e.message?.content ?? e.text ?? '').trim();
+    if (!text) return true;
+    const key = `${e.fromAgent?.id ?? ''}:${text}`;
+    const prev = seenProactive.get(key);
+    const ts = e.timestampMs ?? 0;
+    if (prev != null && Math.abs(ts - prev) < 10 * 60 * 1000) return false;
+    seenProactive.set(key, ts);
+    return true;
+  });
   // The newest turn is the one whose process block appears last.
   const procUnits = buildUnits(visible).filter((u) => u.type === 'process' && u.turnId !== 'no-turn');
   latestTurnId = procUnits.length ? procUnits[procUnits.length - 1].turnId : null;
@@ -2160,9 +2406,10 @@ function renderStream() {
       // A bot writing to the operator on its own initiative gets a quiet marker so it
       // is not mistaken for the answer to the message above it.
       const proactive = entry.proactive === true;
+      const peer = entry.kind === 'message' && entry.role === 'user' && Boolean(entry.fromAgent);
       const el = document.createElement('div');
       el.className = `msg ${mine ? 'mine' : ''} group-${pos}`
-        + `${isPending ? ' pending' : ''}${proactive ? ' proactive' : ''}`;
+        + `${isPending ? ' pending' : ''}${proactive ? ' proactive' : ''}${peer ? ' peer' : ''}`;
       el.dataset.entryId = entry.id;
       // The bubble avatar must be the same object the roster renders — same shape,
       // colour and glyph — otherwise editing an avatar silently desyncs the chat.
@@ -2172,7 +2419,8 @@ function renderStream() {
       const named = inGroup && !mine && entry.fromAgent?.name;
       el.innerHTML = `${mine ? '' : avatarHTML(speaker ?? { id: speakerId, name: '?' }, 30)}
         <span class="stack">
-          ${named && (pos === 'start' || pos === 'single') ? `<span class="sname">${esc(entry.fromAgent.name)}</span>` : ''}
+          ${peer ? `<span class="peerhead">来自 ${esc(entry.fromAgent.name)} 的消息</span>` : ''}
+          ${named && !peer && (pos === 'start' || pos === 'single') ? `<span class="sname">${esc(entry.fromAgent.name)}</span>` : ''}
           ${proactive ? '<span class="pmark">主动通知</span>' : ''}
           <span class="bubble${pos === 'end' || pos === 'single' ? ' has-time' : ''}"><span class="btext"></span>${
             pos === 'end' || pos === 'single'
@@ -2184,16 +2432,65 @@ function renderStream() {
       // never slides under "04:13 · 3076 tok · 4 tok/s".
       const stampEl = el.querySelector('.stamp');
       if (stampEl) {
-        const apply = () => {
+        let passes = 0;
+        const measure = () => {
           // An attachment-only message has no bubble; the stamp lives on the media block.
           const bubble = el.querySelector('.bubble');
           if (!bubble) return;
+          const btext = bubble.querySelector('.btext');
           const w = stampEl.getBoundingClientRect().width;
-          if (w > 0) bubble.style.setProperty('--slot-w', `${Math.ceil(w) + 16}px`);
+          if (!(w > 0) || !btext) return;
+          bubble.style.setProperty('--slot-w', `${Math.ceil(w) + 12}px`);
+
+          // Room left on the last line, measured against the bubble's content edge.
+          const range = document.createRange();
+          range.selectNodeContents(btext);
+          const rects = [...range.getClientRects()];
+          range.detach?.();
+          if (!rects.length) return;
+          const lastLine = rects[rects.length - 1];
+          const br = bubble.getBoundingClientRect();
+          const padRight = parseFloat(getComputedStyle(bubble).paddingRight) || 0;
+          let room = br.right - padRight - lastLine.right;
+          // Widen a short bubble so the stamp fits beside the text: the widest form is
+          // last line + stamp + gap. Only do it while it stays under the max width.
+          if (room < w + 8) {
+            const padLeft = parseFloat(getComputedStyle(bubble).paddingLeft) || 0;
+            const target = Math.ceil(lastLine.width + w + 10 + padLeft + padRight);
+            // max-width may be a percentage or "none"; parseFloat would read "100%" as
+            // 100px and silently veto every widening. Resolve it against the column.
+            const mw = getComputedStyle(bubble).maxWidth;
+            const colW = bubble.parentElement?.getBoundingClientRect().width
+              ?? bubble.getBoundingClientRect().width;
+            const maxW = Math.min(
+              window.innerWidth,
+              mw.endsWith('%') || mw === 'none' ? colW : (parseFloat(mw) || colW),
+            );
+            if (target <= maxW && target > bubble.offsetWidth) {
+              bubble.style.minWidth = `${target}px`;
+              const nb = bubble.getBoundingClientRect();
+              // The widened box needs its own measurement pass before deciding.
+              if (nb.width > br.width) {
+                if (passes++ < 4) requestAnimationFrame(measure);
+                return;
+              }
+            }
+          }
+          const need = (br.right - padRight - lastLine.right) < w + 8;
+          if (need === bubble.classList.contains('need-slot')) return;
+          bubble.classList.toggle('need-slot', need);
+          // Toggling the slot changes the bubble width, which changes the answer — settle
+          // it with a couple of passes instead of trusting the first layout.
+          if (passes++ < 3) requestAnimationFrame(measure);
         };
-        // After this node is in the document and laid out.
+        const apply = () => requestAnimationFrame(measure);
+        // After this node is in the document and laid out. The pending clock and the
+        // final timestamp have different widths, so measure again once the state settles.
         setTimeout(apply, 0);
+        setTimeout(apply, 150);
+        setTimeout(apply, 450);
         new ResizeObserver(apply).observe(stampEl);
+        el._measureStamp = apply;
       }
       // No name label: left/right + the avatar already identify the speaker.
       el.title = name;
@@ -2203,7 +2500,8 @@ function renderStream() {
         ev.preventDefault();
         setReplyTo(entry);
       });
-      renderRichText(el.querySelector('.btext'), entry.message?.content);
+      renderRichText(el.querySelector('.btext'),
+        scrubToolNames(stripTransport(entry.message?.content)));
       if (entry.replyTo) {
         const quoted = entries.find((x) => x.id === entry.replyTo);
         if (quoted) {
@@ -2277,7 +2575,8 @@ function renderStream() {
       log.appendChild(node);
     }
   }
-  log.scrollTop = log.scrollHeight;
+  pinToBottom();
+  relayoutStamps();
 }
 
 // The transcript window deliberately omits tool-call rows (same partial index the
@@ -2839,9 +3138,25 @@ function renderPane() {
 
 /* ---------- actions ---------- */
 async function selectAgent(id) {
-  if (activeId && activeId !== id) drafts.set(activeId, $('input').value);
+  if (activeId && activeId !== id) {
+    drafts.set(activeId, $('input').value);
+    composerStates.set(conversationFor(), { files: pendingFiles, reply: replyTarget });
+  }
   const switched = activeId !== id;
   activeId = id;
+  const version = ++selectionVersion;
+  const conversationId = conversationFor(id);
+  if (switched) {
+    const composer = composerStates.get(conversationId);
+    pendingFiles = composer?.files ?? [];
+    replyTarget = composer?.reply ?? null;
+    renderChips();
+    entries = [];
+    pendingIds = new Set();
+    renderStream();
+  }
+  const opened = agents.find((x) => x.id === id);
+  if (opened) opened.unread = 0;
   renderRoster();
   restoreComposer();
   const a = agents.find((x) => x.id === id);
@@ -2851,33 +3166,40 @@ async function selectAgent(id) {
   // A group shows its member cluster everywhere it appears, not a single shape.
   av.innerHTML = a ? (a.isGroup ? groupAvatar(a.memberIds, 28) : avatarHTML(a, 28)) : '';
 
-  binding = a?.isGroup ? {} : await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
+  const nextBinding = a?.isGroup ? {} : await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
+  if (version !== selectionVersion) return;
+  binding = nextBinding;
   $('model').textContent = a?.isGroup ? '群聊' : (binding.modelId ?? '—');
   $('model').style.display = a?.isGroup ? 'none' : '';
   modelCatalog = null; // the base URL may differ per agent
   const route = await rpc('getAgentRoute', { agentId: id }).catch(() => null);
+  if (version !== selectionVersion) return;
   $('subtitle').textContent = `${a?.description || ''}${route?.proxied ? ' · runs on the server' : ''}`;
 
+  const requestVersion = ++transcriptVersion;
   const [rows, outline, pending] = await Promise.all([
-    rpc('getAgentTranscript', { agentId: id, limit: 300 }),
-    rpc('getAgentOutline', { agentId: id }).catch(() => []),
-    rpc('getPendingEntryIds', { agentId: id }).catch(() => []),
+    rpc('getAgentTranscript', { agentId: id, conversationId, limit: 300 }),
+    rpc('getAgentOutline', { agentId: id, conversationId }).catch(() => []),
+    rpc('getPendingEntryIds', { agentId: id, conversationId }).catch(() => []),
   ]);
+  if (version !== selectionVersion || requestVersion !== transcriptVersion) return;
   pendingIds = new Set(pending ?? []);
   entries = mergeOutline(rows.slice().sort((x, y) => x.seq - y.seq), outline ?? []);
   renderStream();
   await refreshPaneData();
-  rpc('setActiveAgent', { agentId: id }).catch(() => {});
+  if (version === selectionVersion) rpc('setActiveAgent', { agentId: id }).catch(() => {});
 }
 
 async function refreshPaneData() {
   if (!activeId) return;
+  const version = selectionVersion;
   const [r, rules, status, map] = await Promise.all([
     rpc('getAgentAutomations', { agentId: activeId }).catch(() => []),
     rpc('getAutoReviewRules').catch(() => ({})),
     rpc('getHostStatus').catch(() => ({})),
     rpc('getServiceMap').catch(() => null),
   ]);
+  if (version !== selectionVersion) return;
   routines = r ?? [];
   reviewRules = rules ?? {};
   hostStatus = { ...(status ?? {}), ports: map?.ports ?? {} };
@@ -3046,6 +3368,7 @@ function pickMention(i) {
   input.focus();
   closeMention();
   drafts.set(activeId, input.value);
+  invalidateSendAttempt();
 }
 
 function updateMentionState() {
@@ -3076,6 +3399,10 @@ function mentionedAgentIds(text) {
   const re = new RegExp(`@(${pattern})`, 'g');
   const found = new Set();
   for (let m = re.exec(text); m; m = re.exec(text)) {
+    // Check after longest-name selection; a regex lookahead would backtrack to
+    // a shorter name when the longest name is only a prefix of another word.
+    const next = text[re.lastIndex];
+    if (next && !/[\s,，.!?。！？:：]/.test(next)) continue;
     const hit = names.find((a) => a.name === m[1]);
     if (hit) found.add(hit.id);
   }
@@ -3085,40 +3412,68 @@ function mentionedAgentIds(text) {
 async function send() {
   const input = $('input');
   const text = input.value.trim();
-  // Empty text is fine when something is attached.
   if ((!text && !pendingFiles.length) || !activeId) return;
-  input.value = '';
-  input.style.height = 'auto';
+  const agentId = activeId;
+  const conversationId = conversationFor(agentId);
+  if (sendingConversations.has(conversationId)) return;
+  const version = selectionVersion;
+  const rawText = input.value;
+  const paths = pendingFiles.map((f) => f.path);
+  const mentions = mentionedAgentIds(text);
+  const replyTo = replyTarget?.id;
+  const fingerprint = JSON.stringify([rawText, paths, replyTo, mentions]);
+  let attempt = sendAttempts.get(conversationId);
+  if (!attempt || attempt.fingerprint !== fingerprint) {
+    attempt = { fingerprint, clientNonce: globalThis.crypto?.randomUUID?.() ?? `ui-${Date.now()}-${Math.random().toString(36).slice(2)}` };
+    sendAttempts.set(conversationId, attempt);
+  }
+  sendingConversations.add(conversationId);
   $('status').textContent = '发送中…';
   try {
-    // Attachments already live in workspace/uploads; their paths ride with the prompt.
-    const paths = pendingFiles.map((f) => f.path);
-    const mentions = mentionedAgentIds(text);
     const acc = await rpc('sendPrompt', {
-      agentId: activeId, prompt: text,
+      agentId, conversationId, prompt: text, clientNonce: attempt.clientNonce,
       ...(paths.length ? { attachmentPaths: paths } : {}),
       ...(mentions.length ? { mentionAgentIds: mentions } : {}),
-      ...(replyTarget ? { replyTo: replyTarget.id } : {}),
+      ...(replyTo ? { replyTo } : {}),
     });
-    clearReply();
-    if (paths.length) { pendingFiles = []; renderChips(); }
-    // Optimistic row under the nonce, so the operator sees their message instantly.
-    if (acc?.clientNonce && acc?.entryId) {
-      changedMids.set(acc.clientNonce, acc.entryId);
-      if (!entries.some((e) => e.id === acc.entryId || e.id === acc.clientNonce)) {
-        entries.push({
-          kind: 'message', id: acc.entryId, role: 'user', clientNonce: acc.clientNonce,
-          message: { type: 'text', content: text },
-          ...(paths.length ? { attachments: paths } : {}),
-          timestampMs: acc.acceptedAtMs ?? Date.now(),
-        });
-        pendingIds.add(acc.entryId);
-        renderStream();
+    const unchanged = sendAttempts.get(conversationId) === attempt;
+    // Only this captured surface may receive its accepted optimistic row.
+    if (conversationId === conversationFor()) {
+      if (unchanged) {
+        input.value = '';
+        input.style.height = 'auto';
+        drafts.set(agentId, '');
+        clearReply();
+        pendingFiles = [];
+        renderChips();
       }
+      const nonce = acc?.clientNonce ?? attempt.clientNonce;
+      if (acc?.entryId) {
+        changedMids.set(nonce, acc.entryId);
+        if (!entries.some((e) => e.id === acc.entryId || e.id === nonce)) {
+          entries.push({
+            kind: 'message', id: acc.entryId, role: 'user', clientNonce: nonce,
+            conversationId, message: { type: 'text', content: text },
+            ...(paths.length ? { attachments: paths } : {}),
+            ...(replyTo ? { replyTo } : {}),
+            timestampMs: acc.acceptedAtMs ?? Date.now(),
+          });
+          pendingIds.add(acc.entryId);
+          renderStream();
+        }
+      }
+      $('status').textContent = '';
     }
-    $('status').textContent = '';
+    if (unchanged) {
+      drafts.set(agentId, '');
+      composerStates.delete(conversationId);
+      sendAttempts.delete(conversationId);
+    }
   } catch (err) {
-    $('status').textContent = String(err.message);
+    // Keep both the draft and nonce so an unchanged retry is idempotent.
+    if (version === selectionVersion) $('status').textContent = String(err.message);
+  } finally {
+    sendingConversations.delete(conversationId);
   }
 }
 
@@ -3332,27 +3687,44 @@ function connectEvents() {
   es.onerror = () => { $('conn').textContent = 'reconnecting'; $('conn').className = 'pill down'; };
   es.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
+    // Busy belongs to the executing bot; visibility belongs to the conversation.
+    const busyId = ev.botId ?? ev.agentId;
+    const turnKey = ev.turnId ?? ev.segmentId ?? ev.runId;
+    const runtimeEvent = ['text-delta', 'reasoning-delta', 'tool-call', 'turn-start', 'queue-dequeued', 'turn-waiting', 'turn-end', 'turn-error', 'turn-interrupted'].includes(ev.type);
+    const wasHidden = ev.hidden === true || (runtimeEvent && ev.hidden !== false && hiddenTurns.has(turnKey));
+    const completed = ['turn-end', 'turn-error', 'turn-interrupted'].includes(ev.type);
+    const generationStats = genStatsFor(busyId);
+    if (ev.hidden === true && turnKey) hiddenTurns.add(turnKey);
+    if (['turn-start', 'queue-dequeued'].includes(ev.type)) setBusy(true, busyId);
+    if (completed || ev.type === 'turn-waiting') setBusy(false, busyId);
+    // Retain a bounded tombstone so late deltas cannot revive a private turn.
+    if (hiddenTurns.size > 2000) hiddenTurns.delete(hiddenTurns.values().next().value);
+    const targetConversation = eventConversation(ev) ?? conversationFor(ev.agentId);
+    if (ev.type === 'turn-waiting') waitingConversations.add(targetConversation);
+    if (completed || ev.type === 'turn-start') waitingConversations.delete(targetConversation);
     hostEvents.publish(ev);
-    // Lifecycle events must update the per-bot busy set even when that bot is not the
-    // one on screen — otherwise its 思考中 never clears.
-    if (ev.type === 'turn-start' && ev.hidden) hiddenTurns.add(ev.turnId);
-    if (ev.type === 'turn-end' || ev.type === 'turn-error' || ev.type === 'turn-interrupted') {
-      hiddenTurns.delete(ev.turnId);
-    }
-    if (ev.agentId && ev.type === 'turn-start') setBusy(true, ev.agentId);
-    if (ev.agentId && (ev.type === 'turn-end' || ev.type === 'turn-error' || ev.type === 'turn-interrupted')) {
-      setBusy(false, ev.agentId);
-    }
-    if (ev.agentId && ev.agentId !== activeId) {
-      // Only real content moves the timestamp: bumping it on every event (including
-      // queue noise) made the whole roster read "now" forever.
-      const a = agents.find((x) => x.id === ev.agentId);
-      if (a && ev.type === 'transcript' && !ev.entry?.hidden) {
+    if (!matchesConversation(ev)) {
+      const targetId = eventConversation(ev)?.replace(/^(dm|group|task):/, '') ?? ev.agentId;
+      const a = agents.find((x) => x.id === targetId);
+      if (a && !wasHidden && !ev.entry?.hidden && (ev.type === 'transcript' || ev.type === 'turn-end')) {
         a.lastActivityMs = ev.entry?.timestampMs ?? a.lastActivityMs;
+        // A bot reply that lands while another conversation is open is unread.
+        const kind = ev.entry?.kind;
+        const fromBot = kind === 'send-message'
+          || (kind === 'message' && ev.entry?.role === 'assistant');
+        // turn-end carries no entry, so a finished reply is the signal that there is
+        // something new to read even when the transcript row arrived earlier.
+        if (fromBot || ev.type === 'turn-end') a.unread = (a.unread ?? 0) + 1;
         renderRoster();
       }
       return;
     }
+    if (ev.type === 'turn-waiting') {
+      refreshPending();
+      $('status').textContent = '等待审批或回答…';
+    }
+    // Never let delta fallback nodes recreate private group runtime in a bot DM.
+    if (wasHidden || ev.entry?.hidden) return;
     switch (ev.type) {
       case 'transcript': {
         if (ev.entry?.hidden) return;
@@ -3457,7 +3829,7 @@ function connectEvents() {
         // A different bot messaged the operator. Append it if we are showing that bot,
         // otherwise just flag the roster so the operator notices.
         if (ev.entry) {
-          if (ev.agentId === activeId) {
+          if (matchesConversation(ev)) {
             entries = dedupe([...entries.filter((e) => e.id !== ev.entry.id), ev.entry]);
             renderStream();
           } else {
@@ -3469,18 +3841,18 @@ function connectEvents() {
         break;
       case 'turn-start':
       case 'queue-dequeued':
-        setBusy(true, ev.agentId ?? activeId);
         // Only refresh the pending set; re-rendering here would rebuild the live
         // reasoning node and drop its open state.
-        rpc('getPendingEntryIds', { agentId: activeId })
-          .then((p) => { pendingIds = new Set(p ?? []); })
-          .catch(() => {});
+        refreshPending();
+        break;
+      case 'turn-waiting':
         break;
       case 'turn-end':
+        setTimeout(() => { relayoutStamps(); pinToBottom(); }, 60);
         // Freeze the measured throughput onto the turn: the number stays visible in the
         // answer footer after generation stops.
-        if (genStatsFor(ev.agentId ?? activeId) && ev.turnId) {
-          const g = genStatsFor(ev.agentId ?? activeId);
+        if (generationStats && ev.turnId) {
+          const g = generationStats;
           const secs = Math.max(0.2, (Date.now() - g.startedAt) / 1000);
           turnUsage.set(ev.turnId, {
             ...(ev.usage ?? {}),
@@ -3488,13 +3860,8 @@ function connectEvents() {
             measuredMs: Math.round(Date.now() - g.startedAt),
           });
         }
-        setBusy(false, ev.agentId ?? activeId);
         // The answer is finished: fold this turn's reasoning first, so the transition
         // plays, then let the reload settle the final state.
-        if (ev.turnId && hiddenTurns.has(ev.turnId)) {
-          reloadTranscript();
-          break;
-        }
         if (ev.turnId) {
           const r = document.querySelector(`.reasoning[data-turn-id="${ev.turnId}"]`);
           if (r && r.dataset.state === 'running') {
@@ -3512,13 +3879,11 @@ function connectEvents() {
         reloadTranscript();
         break;
       case 'turn-error':
-        setBusy(false, ev.agentId ?? activeId);
         if (ev.turnId) settledTurns.add(ev.turnId);
         $('status').textContent = ev.error;
         reloadTranscript();
         break;
       case 'turn-interrupted':
-        setBusy(false, ev.agentId ?? activeId);
         if (ev.turnId) settledTurns.add(ev.turnId);
         $('status').textContent = '已停止';
         reloadTranscript();
@@ -3536,12 +3901,17 @@ function connectEvents() {
 
 function reloadTranscript() {
   if (!activeId) return;
+  const agentId = activeId;
+  const conversationId = conversationFor(agentId);
+  const version = selectionVersion;
+  const requestVersion = ++transcriptVersion;
   Promise.all([
-    rpc('getAgentTranscript', { agentId: activeId, limit: 300 }),
-    rpc('getAgentOutline', { agentId: activeId }).catch(() => []),
-    rpc('getPendingEntryIds', { agentId: activeId }).catch(() => []),
+    rpc('getAgentTranscript', { agentId, conversationId, limit: 300 }),
+    rpc('getAgentOutline', { agentId, conversationId }).catch(() => []),
+    rpc('getPendingEntryIds', { agentId, conversationId }).catch(() => []),
   ])
     .then(([rows, outline, pending]) => {
+      if (version !== selectionVersion || requestVersion !== transcriptVersion) return;
       pendingIds = new Set(pending ?? []);
       entries = dedupe(mergeOutline(rows.slice().sort((a, b) => a.seq - b.seq), outline ?? []));
       renderStream();
@@ -3756,6 +4126,7 @@ function makeEditable(el, { multiline = false, placeholder = '', save }) {
 let replyTarget = null;
 
 function setReplyTo(entry) {
+  invalidateSendAttempt();
   replyTarget = entry;
   const whom = entry.role === 'user'
     ? (entry.fromAgent?.name ?? '我')
@@ -3766,6 +4137,7 @@ function setReplyTo(entry) {
 
 function clearReply() {
   if (!replyTarget) return;
+  invalidateSendAttempt();
   replyTarget = null;
   $('status').textContent = '';
 }
@@ -3784,7 +4156,7 @@ function renderChips() {
     el.className = 'chip';
     el.innerHTML = `<span class="cname"></span><button class="cdel" title="移除">×</button>`;
     el.querySelector('.cname').textContent = f.name;
-    el.querySelector('.cdel').onclick = () => { pendingFiles.splice(i, 1); renderChips(); };
+    el.querySelector('.cdel').onclick = () => { invalidateSendAttempt(); pendingFiles.splice(i, 1); renderChips(); };
     box.appendChild(el);
   });
 }
@@ -3808,6 +4180,7 @@ $('fileInput').addEventListener('change', async (e) => {
     try {
       $('status').textContent = `上传 ${f.name}…`;
       const r = await uploadFile(f);
+      invalidateSendAttempt();
       pendingFiles.push({ name: r.name, path: r.relativePath, bytes: r.bytes });
       renderChips();
       $('status').textContent = '';
@@ -3827,6 +4200,7 @@ $('input').addEventListener('paste', async (e) => {
     try {
       const named = new File([f], f.name || `paste-${Date.now()}.png`, { type: f.type });
       const r = await uploadFile(named);
+      invalidateSendAttempt();
       pendingFiles.push({ name: r.name, path: r.relativePath, bytes: r.bytes });
       renderChips();
     } catch (err) { $('status').textContent = `上传失败：${err.message}`; }
@@ -4209,15 +4583,16 @@ const drafts = new Map();   // agentId -> unsent composer text
 function setBusy(busy, agentId = activeId) {
   if (!agentId) return;
   if (busy) busyAgents.add(agentId); else busyAgents.delete(agentId);
+  if (!busy) genStatsByAgent.delete(agentId);
+  else if (!genStatsFor(agentId)) {
+    genStatsByAgent.set(agentId, { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true });
+  }
   if (agentId !== activeId) return;
   $('stop').classList.toggle('on', busy);
   if (!busy) {
-    genStatsByAgent.delete(agentId);
+    if (/^(思考中|生成中)/.test($('status').textContent)) $('status').textContent = '';
     if (agentId === activeId) updateHint();
     return;
-  }
-  if (!genStatsFor(agentId)) {
-    genStatsByAgent.set(agentId, { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true });
   }
   if (agentId === activeId) updateHint();
 }
@@ -4226,9 +4601,11 @@ function setBusy(busy, agentId = activeId) {
 function restoreComposer() {
   const busy = busyAgents.has(activeId);
   $('stop').classList.toggle('on', busy);
-  if (!busy) { updateHint(); }
+  if (busy) setBusy(true, activeId);
+  else { $('status').textContent = ''; updateHint(); }
   $('input').value = drafts.get(activeId) ?? '';
-  $('input').dispatchEvent(new Event('input'));
+  restoringComposer = true;
+  try { $('input').dispatchEvent(new Event('input')); } finally { restoringComposer = false; }
 }
 
 function bumpGen(chars, tokens = 0) {
@@ -4247,7 +4624,10 @@ function bumpGen(chars, tokens = 0) {
 // speaks while something is happening.
 function updateHint() {
   const g = genStatsFor();
-  if (!g) return;
+  if (!g) {
+    if (waitingConversations.has(conversationFor())) $('status').textContent = '等待审批或回答…';
+    return;
+  }
   const secs = Math.max(0.2, (Date.now() - g.startedAt) / 1000);
   // Characters per second is the only live signal; tokens only exist at turn end.
   const cps = Math.round(g.chars / secs);
@@ -4259,6 +4639,7 @@ function updateHint() {
 }
 $('input').addEventListener('input', () => {
   if (activeId) drafts.set(activeId, $('input').value);
+  if (!restoringComposer) invalidateSendAttempt();
 });
 $('input').addEventListener('input', () => updateMentionState());
 $('input').addEventListener('click', () => updateMentionState());
@@ -4347,6 +4728,12 @@ function syncNarrowLayout() {
 }
 syncNarrowLayout();
 narrowMq.addEventListener('change', syncNarrowLayout);
+
+syncComposerSpace();
+window.addEventListener('resize', syncComposerSpace);
+window.addEventListener('resize', () => requestAnimationFrame(relayoutStamps));
+document.fonts?.ready.then(() => relayoutStamps()).catch(() => {});
+new ResizeObserver(syncComposerSpace).observe(document.querySelector('.composer'));
 $('openSettings').onclick = openSettings;
 $('openPlugins').onclick = () => { $('status').textContent = '插件：尚未接入'; };
 $('paletteInput').addEventListener('input', (e) => renderPalette(e.target.value));

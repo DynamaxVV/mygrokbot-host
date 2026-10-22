@@ -1,0 +1,98 @@
+{
+  "sourceHead": "d498dd83dca901d8d2a7db6a40e1ecabc9e9a7c4",
+  "isolation": "actual source, injected transport/stores/timers/fs/execFile; no model or real tool effects",
+  "cases": [
+    {
+      "name": "watchdog telemetry does not abort; escape overlaps a live tool",
+      "passed": true,
+      "abortedAtTrip": false,
+      "secondWhileTool": true,
+      "stages": [
+        "trip",
+        "escape",
+        "late_settle"
+      ]
+    },
+    {
+      "name": "forceRelease permits overlap and drain loses released unresolved task",
+      "passed": true,
+      "maximum": 2,
+      "drainedWhileOldActive": true
+    },
+    {
+      "name": "patch E still pumps before exit; enqueue currently discards abort options",
+      "passed": true,
+      "enqueueStoredAbort": false,
+      "aborted": true,
+      "maximum": 2,
+      "quarantinedWhenSecondStarts": false
+    },
+    {
+      "name": "room deadline does not release same-bot scheduler lane",
+      "passed": true,
+      "first": "timeout",
+      "second": "timeout",
+      "startedBeforeRelease": 1,
+      "pendingBackground": 1
+    },
+    {
+      "name": "approval execution bypasses scheduler; a live card runs without a parked run",
+      "passed": true,
+      "effectExecutedDuringOtherRun": true,
+      "parkedRunRequired": false,
+      "continuationQueued": true
+    },
+    {
+      "name": "interrupt leaves suspended approval actionable",
+      "passed": true,
+      "stateAfterInterrupt": "awaiting-approval",
+      "effectRanAfterStop": true
+    },
+    {
+      "name": "widget answer binds the latest unresolved ask_user, not the supplied card",
+      "passed": true,
+      "suppliedCard": "older-widget",
+      "resultBoundCall": "newer",
+      "unrelatedParkedState": "done",
+      "resumedHidden": null
+    },
+    {
+      "name": "success timer stays live; its idle callback throws ReferenceError",
+      "passed": true,
+      "stateBeforeTimer": "done",
+      "timerCancelledOnDone": false,
+      "callbackError": "ReferenceError: acceptances is not defined"
+    },
+    {
+      "name": "old completed turn timer aborts a newer turn controller",
+      "passed": true,
+      "newerControllerAborted": true,
+      "newerRunningDeleted": true,
+      "oldAcceptanceState": "done"
+    },
+    {
+      "name": "park and abort branches leak hideWrites; approved resume reads wrong nesting",
+      "passed": true,
+      "hideWritesLeakedAtPark": true,
+      "hideWritesLeakedAtAbort": true,
+      "patchDParkedHidden": null,
+      "actualHidden": true
+    },
+    {
+      "name": "stream abort does not cancel in-flight tool effect",
+      "passed": true,
+      "controllerAborted": true,
+      "toolReceivedSignal": null,
+      "sideEffectAfterInterrupt": true,
+      "finalState": "interrupted"
+    },
+    {
+      "name": "ToolRuntime shell never passes signal or retains child; pre-aborted write still mutates stub",
+      "passed": true,
+      "preAbortedWritePerformedInMemory": true,
+      "shellSignalProvided": false,
+      "actualChildSpawned": false,
+      "actualFileWritten": false
+    }
+  ]
+}

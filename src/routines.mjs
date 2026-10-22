@@ -251,6 +251,8 @@ export class Routines {
       prompt: `[routine:${routine.name}] ${routine.prompt}`,
       clientNonce: runId,
       trigger: `routine:${trigger}`,
+      lane: 'background',
+      source: 'background',
     });
     this.writeRun(agentId, slug, {
       id: runId,

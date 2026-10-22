@@ -10,11 +10,140 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { readJson, writeJsonAtomicLoose } from './paths.mjs';
 import { evaluate } from './review.mjs';
 
 const MAX_OUTPUT = 64 * 1024;
+
+function abortError(reason = 'Operation cancelled') {
+  if (reason?.name === 'AbortError') return reason;
+  const error = new Error(typeof reason === 'string' ? reason : reason?.message ?? 'Operation cancelled', { cause: reason });
+  error.name = 'AbortError';
+  return error;
+}
+
+function checkSignal(signal) {
+  if (signal?.aborted) throw abortError(signal.reason);
+}
+
+function processTable() {
+  return new Promise((resolve, reject) => {
+    execFile('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat='], { maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+      if (error) { reject(error); return; }
+      resolve(stdout.trim().split('\n').map((line) => {
+        const [pid, ppid, pgid, stat] = line.trim().split(/\s+/);
+        return { pid: Number(pid), ppid: Number(ppid), pgid: Number(pgid), stat };
+      }));
+    });
+  });
+}
+
+// Detached POSIX shell owns a process group. Every completion waits for close
+// AND all observed live group members/descendants; zombies are already exited.
+// A daemon that fully detaches before observation has no portable ownership API.
+async function runShell(command, { cwd, env, signal }) {
+  checkSignal(signal);
+  const posix = process.platform !== 'win32';
+  const child = posix
+    ? spawn('/bin/sh', ['-lc', command], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    : spawn(env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], { cwd, env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '', stderr = '', outputBytes = 0, closed = false, spawnError, cancellation, timedOut = false;
+  let cancelPromise, terminating = false;
+  const known = new Set(child.pid ? [child.pid] : []);
+  const kill = (pid, sig) => { try { process.kill(pid, sig); } catch (error) { if (error.code !== 'ESRCH') spawnError ??= error; } };
+  const liveDescendants = async () => {
+    const rows = await processTable();
+    // Capture children even if they switched group before cancellation.
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const row of rows) if ((row.pgid === child.pid || known.has(row.ppid)) && !known.has(row.pid)) {
+        known.add(row.pid); changed = true;
+      }
+    }
+    return rows.filter((row) => known.has(row.pid) && !/^[ZX]/.test(row.stat));
+  };
+  const inspectLive = async () => {
+    try { return await liveDescendants(); }
+    catch {
+      // A failed process listing is not evidence of exit. Probe both the group
+      // and observed descendants (which may since have changed process group).
+      const live = new Map();
+      for (const pid of new Set([-child.pid, ...known])) {
+        try { process.kill(pid, 0); live.set(Math.abs(pid), { pid: Math.abs(pid) }); }
+        catch (error) { if (error.code !== 'ESRCH') live.set(Math.abs(pid), { pid: Math.abs(pid) }); }
+      }
+      return [...live.values()];
+    }
+  };
+  const terminate = () => {
+    if (terminating) return cancelPromise;
+    terminating = true;
+    cancelPromise = (async () => {
+      if (!child.pid) return;
+      if (!posix) {
+        await new Promise((resolve) => {
+          execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], () => { child.kill(); resolve(); });
+        });
+        return;
+      }
+      const started = Date.now();
+      let sent = false;
+      for (;;) {
+        const live = await inspectLive();
+        if (!live.length && closed) return;
+        const sig = Date.now() - started >= 500 ? 'SIGKILL' : 'SIGTERM';
+        if (!sent || sig === 'SIGKILL') {
+          kill(-child.pid, sig);
+          for (const row of live) if (row.pid !== child.pid) kill(row.pid, sig);
+          sent = true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    })();
+    return cancelPromise;
+  };
+  const onAbort = () => { cancellation ??= abortError(signal.reason); void terminate(); };
+  const collect = (which, chunk) => {
+    outputBytes += chunk.length;
+    if (which === 'stdout') stdout += chunk.toString('utf8').slice(0, Math.max(0, MAX_OUTPUT + 1 - stdout.length));
+    else stderr += chunk.toString('utf8').slice(0, Math.max(0, MAX_OUTPUT + 1 - stderr.length));
+    if (outputBytes > 8 * 1024 * 1024) { spawnError ??= new Error('shell output exceeded 8 MiB'); void terminate(); }
+  };
+  child.stdout.on('data', (chunk) => collect('stdout', chunk));
+  child.stderr.on('data', (chunk) => collect('stderr', chunk));
+  const completion = new Promise((resolve) => {
+    child.on('error', (error) => { spawnError ??= error; });
+    child.on('close', (code, exitSignal) => { closed = true; resolve({ code, exitSignal }); });
+  });
+  signal?.addEventListener('abort', onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+  const timeout = setTimeout(() => { timedOut = true; void terminate(); }, 10 * 60_000);
+  try {
+    const { code, exitSignal } = await completion;
+    if (posix && child.pid) {
+      // The shell can close while a redirected background child is still alive.
+      // Keep both the abort listener and timeout until the whole owned tree ends.
+      for (;;) {
+        if (cancelPromise) break;
+        const live = await inspectLive();
+        // Cancellation may start while the process-table request is in flight.
+        if (cancelPromise || !live.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+    if (cancelPromise) await cancelPromise;
+    if (cancellation) throw cancellation;
+    checkSignal(signal);
+    return { exitCode: timedOut || spawnError ? 1 : code ?? 1, stdout: truncate(stdout),
+      stderr: truncate(stderr || spawnError?.message || (timedOut ? 'shell timed out' : exitSignal ? `terminated by ${exitSignal}` : '')) };
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', onAbort);
+  }
+}
 
 function truncate(text) {
   if (text.length <= MAX_OUTPUT) return text;
@@ -146,6 +275,23 @@ export function toolDefinitions() {
     {
       type: 'function',
       function: {
+        name: 'delegate_task',
+        description: 'Delegate an objective to another bot. The runtime supplies the parent task identity.',
+        parameters: {
+          type: 'object',
+          properties: {
+            to: { type: 'string', description: 'Bot name or id' },
+            objective: { type: 'string' },
+            expectedOutput: { type: 'string' },
+          },
+          required: ['to', 'objective', 'expectedOutput'],
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
         name: 'message_agent',
         description:
           'Message another bot. REQUIRED: decide whether this is actionable. priority=true means they should act or someone waits on their reply: it is delivered now and wakes them, jumping their queue ahead of routine/background work (but behind a turn already talking to the user). priority=false means informational: it is held and read at the start of their next turn, without waking them. Replies are asynchronous — do not wait. Groups are text-only and always post immediately.',
@@ -235,9 +381,17 @@ export class ToolRuntime {
     return { decision: 'needs-approval', rule: null };
   }
 
-  async execute({ agentId, call, approvedCommands = new Set() }) {
+  async execute({ agentId, call, approvedCommands = new Set(), ctx, signal = ctx?.signal, effectPermit }) {
     const name = call.name;
     const args = call.args ?? {};
+    const checkpoint = async () => {
+      checkSignal(signal);
+      if (typeof effectPermit === 'function' && await effectPermit({ agentId, call, ctx, signal }) === false) {
+        throw abortError('Effect permit revoked');
+      }
+      checkSignal(signal);
+    };
+    await checkpoint();
     switch (name) {
       case 'shell': {
         const verdict = this.assess(args.command);
@@ -255,17 +409,11 @@ export class ToolRuntime {
             },
           };
         }
+        await checkpoint();
         const cwd = args.workdir ? this.resolveInside(agentId, args.workdir) : this.workspace(agentId);
-        const out = await new Promise((resolve) => {
-          execFile('/bin/sh', ['-lc', args.command], { cwd, timeout: 10 * 60_000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => {
-            const code = err?.code ?? 0;
-            resolve({
-              exitCode: typeof code === 'number' ? code : 1,
-              stdout: truncate(String(stdout ?? '')),
-              stderr: truncate(String(stderr ?? err?.message ?? '')),
-            });
-          });
-        });
+        await checkpoint();
+        const out = await runShell(args.command, { cwd, env: this.env, signal });
+        await checkpoint();
         return { isError: out.exitCode !== 0, result: out };
       }
       case 'read_file': {
@@ -278,9 +426,29 @@ export class ToolRuntime {
       }
       case 'write_file': {
         const abs = this.resolveInside(agentId, args.path);
-        fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, String(args.content ?? ''), 'utf8');
-        return { isError: false, result: { wrote: path.relative(this.workspace(agentId), abs), bytes: String(args.content ?? '').length } };
+        const content = String(args.content ?? '');
+        const temp = path.join(path.dirname(abs), `.${path.basename(abs)}.${randomUUID()}.tmp`);
+        let created = false;
+        try {
+          await checkpoint();
+          checkSignal(signal);
+          fs.mkdirSync(path.dirname(abs), { recursive: true });
+          await checkpoint();
+          checkSignal(signal);
+          // Preserve ordinary permission bits when replacing an existing file.
+          const mode = fs.existsSync(abs) ? fs.statSync(abs).mode & 0o777 : 0o666;
+          const fd = fs.openSync(temp, 'wx', mode);
+          created = true;
+          try { fs.writeFileSync(fd, content, 'utf8'); } finally { fs.closeSync(fd); }
+          await checkpoint();
+          checkSignal(signal);
+          fs.renameSync(temp, abs);
+          created = false;
+        } finally {
+          // Cleanup is allowed after revocation; the random sibling is ours alone.
+          if (created) fs.rmSync(temp, { force: true });
+        }
+        return { isError: false, result: { wrote: path.relative(this.p.workspace, abs), bytes: Buffer.byteLength(content) } };
       }
       case 'list_dir': {
         const abs = this.resolveInside(agentId, args.path ?? '.');
@@ -293,9 +461,11 @@ export class ToolRuntime {
         return { isError: false, result: rows };
       }
       case 'recall_memory':
-        return { isError: false, result: this.roster.readMemoryAll(agentId) || '(empty memory)' };
+        return { isError: false, result: this.roster.readMemoryAll(agentId, { conversationId: ctx?.conversationId }) || '(empty memory)' };
       case 'update_memory': {
-        const file = this.roster.appendMemory(agentId, args.text, { kind: args.kind ?? 'note' });
+        await checkpoint();
+        checkSignal(signal);
+        const file = this.roster.appendMemory(agentId, args.text, { kind: args.kind ?? 'note', conversationId: ctx?.conversationId });
         return { isError: false, result: { saved: true, file } };
       }
       case 'read_skill': {
@@ -323,10 +493,24 @@ export class ToolRuntime {
         if (typeof this.onMessageUser !== 'function') {
           return { isError: true, result: { error: 'message_user is unavailable in this runtime' } };
         }
-        const sent = await this.onMessageUser({ agentId, text: args.text, reason: args.reason ?? null });
+        await checkpoint();
+        const sent = await this.onMessageUser({ agentId, text: args.text, reason: args.reason ?? null, ctx, signal, effectPermit });
+        await checkpoint();
         return { isError: false, result: { delivered: sent.delivered, to: 'user' } };
       }
+      case 'delegate_task':
+        await checkpoint();
+        return {
+          isError: false,
+          deferToRuntime: {
+            kind: 'delegate_task',
+            to: args.to,
+            objective: args.objective,
+            expectedOutput: args.expectedOutput,
+          },
+        };
       case 'message_agent':
+        await checkpoint();
         return {
           isError: false,
           deferToRuntime: {

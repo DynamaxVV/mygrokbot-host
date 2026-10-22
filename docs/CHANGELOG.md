@@ -1,6 +1,19 @@
 # 变更记录
 
-## 2026-10-22 晚 — 群聊、@ 定向与隔离
+## 2026-10-22 — 执行、会话与可靠派工（P0/P1）
+
+当前协议见 [EXECUTION.md](EXECUTION.md)，功能入口见 [CORE_FEATURES.md](CORE_FEATURES.md)，编译与启动见 [BUILD_AND_RUN.md](BUILD_AND_RUN.md)。以下旧章节按历史版本保留，旧 hidden 全局开关与群消息复制行为已经被本节替代。
+
+- 增加主机级 `execution.db`（SQLite WAL/FULL），事务保存接纳、Run、交互、任务与 outbox。旧 JSON 台账兼容导入并用于诊断，Run 状态以协调库为准；已完成结果重启不回退，未知副作用结果进入 `needs-reconciliation`。
+- 固定 `conversationId/runId/segmentId` 归属与输入水位，群业务历史仅群 Store 一份，不再复制成员私聊。逐条 hidden 属性替代 `store.hideWrites` 全局开关；私聊、群与任务记忆默认分区。
+- Scheduler 取消等待真实退出，watchdog 宽限期后记 `stuck` 而非 escape 放行；`forceRelease` 请求取消，`drain` 等待任务与取消钩子。
+- 审批与问题绑定原 Run、callId、参数摘要和取消版本；批准后的工具与续跑以同 Run 新 segment 排队。持久待决卡可恢复，无绑定旧卡过期；停止使对应交互失效。
+- 群支持 fan-out、明确 @、coordinated 与 round_robin；轮次取消/替换/超时按精确成员 Run 操作，结果不再从最近一条 Bot 回复猜测。群投影使用稳定消息 ID 和持久投递去重。
+- 增加本地 `delegate_task` 持久任务依赖，子任务独立会话执行、父等待释放槽、结果自动恢复父 Run。非本地目标返回明确错误；普通 `message_agent` 继续作为异步消息。
+- 增加 `listTasks`、`getTask`、`cancelTask`、`getRunStatus`，台账诊断附执行库统计；查询、导出、分支与 SSE 按显示会话隔离。
+- 此前完整回归 **174 项：171 通过、3 跳过**。本轮文档整理未新增 GUI、真实模型或打包验证；下文安装包大小和历史页面结果只对应当时验证。
+
+## 2026-10-22 晚 — 群聊、@ 定向与隔离（历史实现）
 
 ### 群聊不再是"模型调用方"
 

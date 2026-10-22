@@ -23,6 +23,7 @@ import { resolveBinding, setAgentBinding, removeAgentBinding, loadBindings } fro
 import { searchTranscripts } from './db.mjs';
 import { secretStatus, setSecret, maskKey } from './secrets.mjs';
 import { loadRules, saveRules } from './review.mjs';
+import { directConversation, groupConversation, entryConversation, TERMINAL_RUN_STATES } from './conversation.mjs';
 
 const MAX_BODY = 8 * 1024 * 1024;
 
@@ -80,6 +81,62 @@ function authorized(req, token) {
 export function createGateway({ p, roster, catalog, engine, tools, bus, routines, rooms, proxy, log = () => {} }) {
   const startedAt = Date.now();
   const config = { host: '127.0.0.1', port: 0, token: null };
+  const fail = (code, status = 409) => Object.assign(new Error(code), { code, status });
+  const surface = (agentId, conversationId = null) => {
+    const id = roster.resolve(agentId);
+    const conv = roster.profile(id)?.isGroup === true ? groupConversation(id) : directConversation(id);
+    // JSON ctx/hidden/taskId flags are data, never a capability to enter an
+    // internal group-member/task conversation through the public gateway.
+    if (conversationId != null && conversationId !== conv) throw fail('conversation/owner-mismatch');
+    return { id, conversationId: conv };
+  };
+  const allVisible = (agentId, conversationId = null, { includeToolCalls = true } = {}) => {
+    const { id, conversationId: conv } = surface(agentId, conversationId);
+    // The full/export/branch API must not silently truncate at a window's 10k
+    // cap. Apply the same display-conversation projection over the complete store.
+    const rows = roster.store(id).readAll({ includeToolCalls });
+    const hiddenTurns = new Set(rows.filter((row) => row.hidden && row.turnId).map((row) => row.turnId));
+    return rows.filter((row) => !row.hidden && !row.branched &&
+      (row.displayConversationId ?? entryConversation(row, id, hiddenTurns)) === conv);
+  };
+  const visibleWindow = (agentId, conversationId, options = {}) => {
+    const { id, conversationId: conv } = surface(agentId, conversationId);
+    return engine.visibleEntries(id, { ...options, conversationId: conv });
+  };
+  const requireTask = (taskId) => {
+    if (typeof taskId !== 'string' || !taskId) throw fail('task/invalid-id', 400);
+    const task = engine.tasks?.get(taskId) ?? engine.execution.getTask(taskId);
+    if (!task) throw fail('task/not-found', 404);
+    return task;
+  };
+  const requireRun = (runId) => {
+    if (typeof runId !== 'string' || !runId) throw fail('run/invalid-id', 400);
+    const run = engine.getRun(runId);
+    if (!run) throw fail('run/not-found', 404);
+    return run;
+  };
+  const executionSummary = () => {
+    const execution = engine.execution;
+    const runs = execution.listRuns(), tasks = execution.listTasks(), interactions = execution.listInteractions();
+    const counts = (rows) => rows.reduce((out, row) => { out[row.state ?? 'unknown'] = (out[row.state ?? 'unknown'] ?? 0) + 1; return out; }, {});
+    return { runs: runs.length, runStates: counts(runs), tasks: tasks.length, taskStates: counts(tasks),
+      interactions: interactions.length, interactionStates: counts(interactions), pendingDeliveries: execution.pendingDeliveries().length };
+  };
+  const retireConversation = async ({ agentId, conversationId = null, entryId = null, fresh = false }) => {
+    const { id, conversationId: conv } = surface(agentId, conversationId);
+    if (proxy?.isProxiedAgent(id)) return proxy.act({ method: fresh ? 'startFreshConversation' : 'rollBackConversation', args: { agentId: id, conversationId: conv, entryId } });
+    const rows = allVisible(id, conv);
+    const cut = fresh ? null : rows.find((row) => row.id === entryId);
+    if (!fresh && !cut) throw fail('conversation/message-not-found', 404);
+    if (roster.profile(id)?.isGroup === true) await rooms.cancel(id);
+    // Cancel this conversation only; physical stores also contain private task
+    // and group-member work whose execution/history must remain independent.
+    for (const run of engine.execution.listRuns()) if (run.conversationId === conv && !TERMINAL_RUN_STATES.has(run.state)) await engine.cancelRun(run.runId, fresh ? 'conversation reset' : 'conversation rolled back');
+    const removed = rows.filter((row) => fresh || row.seq > cut.seq);
+    for (const row of removed) roster.store(id).updateEntry(row.id, (entry) => ({ ...entry, branched: true }));
+    bus.publish({ type: 'conversation-reset', agentId: id, conversationId: conv, ...(cut ? { throughEntryId: cut.id } : {}), fresh });
+    return { agentId: id, conversationId: conv, removed: removed.length, ...(cut ? { entryId: cut.id } : {}) };
+  };
 
   const methods = {
     // ---- health / host --------------------------------------------------
@@ -190,46 +247,45 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     },
 
     // ---- transcript -----------------------------------------------------
-    getAgentTranscript: ({ agentId, limit = 200, beforeSeq = null }) =>
-      roster.store(roster.resolve(agentId)).readWindow({ limit, beforeSeq }),
-    getAgentTranscriptTail: ({ agentId, limit = 50 }) => roster.store(roster.resolve(agentId)).readTail({ limit }),
-    // The window omits tool-call rows (same partial index the real host uses), so
-    // tool activity is served separately as an outline — the real host derives its
-    // outline from turn state and emits tool-call entries there.
-    getAgentOutline: ({ agentId, limit = 200 }) => {
-      const id = roster.resolve(agentId);
-      const all = roster.store(id).readAll({ includeToolCalls: true });
+    getAgentTranscript: ({ agentId, conversationId = null, limit = 200, beforeSeq = null }) =>
+      visibleWindow(agentId, conversationId, { limit, beforeSeq }),
+    getAgentTranscriptTail: ({ agentId, conversationId = null, limit = 50, beforeSeq = null }) =>
+      visibleWindow(agentId, conversationId, { limit, beforeSeq }).reverse(),
+    // Calls/results join only within the same visible conversation; a group's
+    // private tool trace in a member's physical store never enters its DM outline.
+    getAgentOutline: ({ agentId, conversationId = null, limit = 200 }) => {
+      const all = allVisible(agentId, conversationId);
+      const count = Math.max(1, Math.min(Number(limit) || 200, 10000));
       const calls = all
         .filter((e) => e.kind === 'tool-call')
-        .slice(-limit)
+        .slice(-count)
         .map((e) => ({
           id: e.id,
           name: e.name ?? 'tool',
           status: e.status ?? 'ok',
           summary: e.summary ?? '',
-          // The step row names itself by its argument and joins to its turn; dropping
-          // these made every row render with an empty preview and outside its process.
           args: e.args ?? {},
           turnId: e.turnId ?? null,
+          conversationId: e.displayConversationId ?? e.conversationId,
           timestampMs: e.timestampMs,
         }));
-      // A tool-call entry uses its provider call id as its entry id, and the matching
-      // tool-result carries that same id in `callId`, so the two join on it directly.
       const results = new Map(all.filter((e) => e.kind === 'tool-result').map((e) => [e.callId, e]));
-      return calls.map((c) => {
-        const hit = results.get(c.id);
-        return { ...c, hasResult: hit != null, result: hit?.result ?? null, isError: hit?.isError === true };
+      return calls.map((call) => {
+        const hit = results.get(call.id);
+        return { ...call, hasResult: hit != null, result: hit?.result ?? null, isError: hit?.isError === true };
       });
     },
-    getAgentTranscriptAll: ({ agentId }) => roster.store(roster.resolve(agentId)).readAll(),
+    getAgentTranscriptAll: ({ agentId, conversationId = null }) => allVisible(agentId, conversationId),
+    startFreshConversation: (args) => retireConversation({ ...args, fresh: true }),
+    rollBackConversation: (args) => retireConversation({ ...args, fresh: false }),
 
     // Branch a conversation at a message: the new bot inherits the transcript up to
     // and including that entry, then diverges. The original is untouched.
-    branchConversation: ({ agentId, entryId }) => {
-      const id = roster.resolve(agentId);
+    branchConversation: ({ agentId, entryId, conversationId = null }) => {
+      const { id, conversationId: sourceConv } = surface(agentId, conversationId);
       const source = roster.summary(id);
-      const rows = roster.store(id).readAll();
-      const cut = rows.findIndex((r) => r.id === entryId);
+      const rows = allVisible(id, sourceConv);
+      const cut = rows.findIndex((row) => row.id === entryId);
       if (cut < 0) throw new Error('message not found');
       const parent = roster.profile(id) ?? {};
       // Branch names must be unique or the roster becomes a wall of identical rows.
@@ -248,18 +304,47 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
       if (sourceBinding) setAgentBinding(p.root, branch.id, sourceBinding);
 
       const store = roster.store(branch.id);
-      for (const row of rows.slice(0, cut + 1)) {
-        const { seq, ...rest } = row;
-        store.appendEntry({ ...rest, id: `${rest.id}-b-${seq}`.slice(0, 64) });
+      const copied = rows.slice(0, cut + 1);
+      const ids = new Map(copied.map((row) => [row.id, `branch-${randomUUID()}`]));
+      const turns = new Map();
+      const turnId = (value) => {
+        if (!turns.has(value)) turns.set(value, `branch-segment-${randomUUID()}`);
+        return turns.get(value);
+      };
+      for (const row of copied) {
+        const { seq, displayConversationId, interactionId, runId, taskId, clientNonce, sourceMessageId, ...rest } = row;
+        const next = { ...rest, id: ids.get(row.id), schemaVersion: 2,
+          botId: branch.id, conversationId: directConversation(branch.id), hidden: false,
+          sourceConversationId: row.conversationId ?? sourceConv, sourceEntryId: row.id,
+          ...(runId ? { sourceRunId: runId } : {}), ...(taskId ? { sourceTaskId: taskId } : {}),
+          streaming: false, held: false };
+        if (row.turnId) next.turnId = turnId(row.turnId);
+        if (row.segmentId) next.segmentId = turnId(row.segmentId);
+        if (row.callId) {
+          if (ids.has(row.callId)) next.callId = ids.get(row.callId);
+          else if (row.kind === 'tool-result') { next.callId = `historical-${randomUUID()}`; next.sourceCallId = row.callId; }
+          else delete next.callId;
+        }
+        if (typeof row.replyTo === 'string') {
+          if (ids.has(row.replyTo)) next.replyTo = ids.get(row.replyTo);
+          else { next.sourceReplyTo = row.replyTo; delete next.replyTo; }
+        }
+        if (row.kind === 'tool-call' && !['ok', 'error', 'denied', 'blocked'].includes(row.status)) next.status = 'interrupted';
+        if (row.message?.type === 'auto-review-approval') {
+          next.message = { ...row.message, resolution: row.message.resolution ?? 'expired', inert: true };
+        } else if (row.message?.type === 'question') {
+          next.message = { ...row.message, answered: true, cancelled: true, inert: true, widgetId: `historical-${randomUUID()}` };
+        }
+        store.appendEntry(next);
       }
-      return { agentId: branch.id, name: branch.name, copied: cut + 1 };
+      return { agentId: branch.id, conversationId: directConversation(branch.id), name: branch.name, copied: copied.length };
     },
 
     // Export one conversation as a self-contained markdown transcript.
-    exportTranscript: ({ agentId, format = 'markdown' }) => {
-      const id = roster.resolve(agentId);
+    exportTranscript: ({ agentId, conversationId = null, format = 'markdown' }) => {
+      const { id, conversationId: conv } = surface(agentId, conversationId);
       const agent = roster.summary(id);
-      const rows = roster.store(id).readAll();
+      const rows = allVisible(id, conv);
       const lines = [`# ${agent?.name ?? 'Bot'}`, ''];
       const fmt = (ms) => {
         if (!ms) return '';
@@ -289,12 +374,32 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     searchTranscripts: ({ query, limit = 60 }) => {
       const stores = roster.list()
         .filter((a) => !a.isGroup)
-        .map((a) => ({ agentId: a.id, agentName: a.name, store: roster.store(a.id) }));
+        .map((a) => ({ agentId: a.id, agentName: a.name, store: { readAll: () => allVisible(a.id) } }));
       return searchTranscripts({ stores, query, limit });
     },
     // Rows accepted but not yet settled. The client merges this with the transcript
     // so overlapping sends keep their order instead of jumping.
-    getPendingEntryIds: ({ agentId }) => engine.pendingEntryIds(agentId),
+    getPendingEntryIds: ({ agentId, conversationId = null }) => {
+      const { id, conversationId: conv } = surface(agentId, conversationId);
+      return engine.pendingEntryIds(id, conv);
+    },
+    listTasks: ({ agentId = null, parentRunId = null, conversationId = null, state = null } = {}) => {
+      const id = agentId == null ? null : roster.resolve(agentId);
+      if (parentRunId != null) requireRun(parentRunId);
+      return engine.execution.listTasks().filter((task) =>
+        (!id || task.fromBotId === id || task.toBotId === id) && (!parentRunId || task.parentRunId === parentRunId) &&
+        (!conversationId || task.returnConversationId === conversationId) && (!state || task.state === state));
+    },
+    getTask: ({ taskId }) => requireTask(taskId),
+    cancelTask: async ({ taskId, reason = 'task cancelled by operator' }) => {
+      const task = requireTask(taskId);
+      if (!task.runId) throw fail('task/missing-run');
+      const run = requireRun(task.runId);
+      if (run.taskId !== task.id || run.agentId !== task.toBotId) throw fail('task/run-mismatch');
+      const requested = await engine.cancelRun(run.runId, String(reason));
+      return { taskId, runId: run.runId, requested, task: requireTask(taskId) };
+    },
+    getRunStatus: ({ runId }) => requireRun(runId),
     // nonce -> entryId pairs, so a client that optimistically rendered by nonce can
     // re-key the node once the row lands (tweb changedMids).
     getChangedMids: () => engine.changedMids.entries(),
@@ -311,30 +416,32 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     // ---- prompts --------------------------------------------------------
     // Every method below checks isProxiedAgent first, the same guard the deployed host
     // applies on all of them: a temporal agent's work belongs to the server.
-    sendPrompt: async ({ agentId, prompt, clientNonce = null, attachmentPaths = [], replyTo = null, mentionAgentIds = null }) => {
-      const id = roster.resolve(agentId);
-      // An attachment-only message is legitimate: the files carry the meaning.
+    sendPrompt: async ({ agentId, prompt, clientNonce = null, nonce = null, conversationId = null, attachmentPaths = [], replyTo = null, mentionAgentIds = null, mentions = null, strategy = null }) => {
+      const { id, conversationId: conv } = surface(agentId, conversationId);
       if (!String(prompt ?? '').trim() && !(attachmentPaths?.length)) throw new Error('prompt is empty');
+      if (clientNonce != null && nonce != null && clientNonce !== nonce) throw fail('send/nonce-mismatch');
+      const acceptedNonce = clientNonce ?? nonce ?? randomUUID();
+      const text = String(prompt ?? '');
+      // Group routing precedes proxy routing: a group is a room surface, never
+      // an agent model, even if a legacy profile happens to name a harness.
+      if (roster.profile(id)?.isGroup === true) {
+        const memberIds = roster.groupMembers(id);
+        const selectedRefs = mentionAgentIds ?? mentions;
+        if (selectedRefs != null && (!Array.isArray(selectedRefs) || selectedRefs.some((member) => typeof member !== 'string'))) throw fail('group/invalid-mentions');
+        const selected = selectedRefs == null ? null : selectedRefs.map((member) => roster.resolve(member));
+        if (selected?.some((member) => !memberIds.includes(member))) throw fail('group/mention-not-member');
+        return engine.postFromOperator({ groupId: id, text, clientNonce: acceptedNonce, conversationId: conv,
+          attachmentPaths, replyTo, onlyMemberIds: selected, mentionAgentIds: selected, mentions,
+          ...(strategy != null ? { strategy } : {}) });
+      }
       if (proxy?.isProxiedAgent(id)) {
-        const forwarded = await proxy.act({
-          method: 'sendPrompt',
-          args: { agentId: id, prompt: String(prompt), clientNonce: clientNonce ?? randomUUID(), attachmentPaths, replyTo },
-        });
+        const forwarded = await proxy.act({ method: 'sendPrompt', args: {
+          agentId: id, prompt: text, clientNonce: acceptedNonce, conversationId: conv,
+          attachmentPaths, replyTo, mentionAgentIds, mentions, ...(strategy != null ? { strategy } : {}),
+        } });
         return { ...forwarded, agentId: id, proxied: true };
       }
-      // A group is a fan-out target, not a model: post the message into the room and
-      // deliver it to every member. Running a turn here would need a binding the group
-      // deliberately does not have (and produced the provider 401).
-      if (roster.profile(id)?.isGroup === true) {
-        return engine.postFromOperator({
-          groupId: id,
-          text: String(prompt),
-          clientNonce,
-          attachmentPaths,
-          onlyMemberIds: Array.isArray(mentionAgentIds) ? mentionAgentIds.map((m) => roster.resolve(m)) : null,
-        });
-      }
-      return engine.admit({ agentId: id, prompt: String(prompt), clientNonce, attachmentPaths, replyTo });
+      return engine.admit({ agentId: id, prompt: text, clientNonce: acceptedNonce, conversationId: conv, attachmentPaths, replyTo });
     },
     promptAcceptanceStatus: async ({ clientNonce, agentId = null }) => {
       if (agentId && proxy?.isProxiedAgent(roster.resolve(agentId))) {
@@ -348,7 +455,7 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     },
     // Durable ledger health: how many records, and whether history was evicted or
     // degraded (which turns a lookup into unknown-durability).
-    getAcceptanceLedgerStatus: () => engine.ledger.status(),
+    getAcceptanceLedgerStatus: () => ({ ...engine.ledger.status(), execution: executionSummary() }),
     getQueueDiagnostics: () => engine.scheduler.getDiagnostics(),
     respondToWidget: async ({ agentId, entryId, value }) => {
       const id = roster.resolve(agentId);
@@ -369,13 +476,15 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
         images,
         messageId,
       }),
-    interruptAgentRun: async ({ agentId }) => {
+    interruptAgentRun: async ({ agentId, runId = null }) => {
       const id = roster.resolve(agentId);
+      if (runId != null && (typeof runId !== 'string' || !runId)) throw fail('run/invalid-id', 400);
       if (proxy?.isProxiedAgent(id)) {
-        const forwarded = await proxy.act({ method: 'interruptAgentRun', args: { id } });
+        const forwarded = await proxy.act({ method: 'interruptAgentRun', args: { id, agentId: id, runId } });
         return { ...forwarded, agentId: id, proxied: true };
       }
-      return engine.interrupt(id);
+      if (runId != null && requireRun(runId).agentId !== id) throw fail('run/owner-mismatch');
+      return engine.interrupt(id, { runId });
     },
 
     // ---- attachments -----------------------------------------------------
@@ -722,7 +831,7 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
           return json(res, 200, { ok: true, method, requestId, result });
         } catch (err) {
           log('rpc.error', { method, requestId, error: String(err.message) });
-          return json(res, 500, { ok: false, method, requestId, error: String(err.message) });
+          return json(res, err.status ?? 500, { ok: false, method, requestId, ...(err.code ? { code: err.code } : {}), error: String(err.message) });
         }
       }
 

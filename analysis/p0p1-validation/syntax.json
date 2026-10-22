@@ -1,0 +1,31 @@
+{
+  "node": "v26.5.0",
+  "checkedMjs": [
+    "bin/mgb.mjs",
+    "src/conversation.mjs",
+    "src/db.mjs",
+    "src/engine.mjs",
+    "src/execution.mjs",
+    "src/gateway.mjs",
+    "src/host.mjs",
+    "src/proxy.mjs",
+    "src/room.mjs",
+    "src/roster.mjs",
+    "src/routines.mjs",
+    "src/runtime.mjs",
+    "src/scheduler.mjs",
+    "src/tasks.mjs",
+    "src/tools.mjs",
+    "test/cancellation-fixture.mjs",
+    "test/cancellation.test.mjs",
+    "test/conversation-fixture.mjs",
+    "test/conversation.test.mjs",
+    "test/e2e.test.mjs",
+    "test/execution.test.mjs",
+    "test/scheduling.test.mjs",
+    "test/task-fixture.mjs",
+    "test/tasks.test.mjs"
+  ],
+  "inlineScripts": 1,
+  "status": "passed"
+}

@@ -1,6 +1,31 @@
 # 交互调度全流程
 
-基于线上 bundle `2e44baf`（`sand-host-bundle-2e44baf.tgz`，sha256 `e2caadd9…`）逐模块核对。标 **F** 为源码事实，**M** 为本项目对应实现。
+## 当前执行流程（2026-10-22，P0/P1 后）
+
+当前协议以 [EXECUTION.md](EXECUTION.md) 为准；常用功能见 [CORE_FEATURES.md](CORE_FEATURES.md)，启动命令见 [BUILD_AND_RUN.md](BUILD_AND_RUN.md)。本节之后保留线上 bundle 的 **F** 事实与早期 **M（历史）** 对照，旧 escape 与 JSON 台账语义属于历史。
+
+1. `gateway.sendPrompt` 校验显示会话，群消息先进入 RoomTurns，单 Bot 按 harness 决定本地或 Proxy。目标不可运行时，在新接纳前返回错误。
+2. `TurnRuntime.admit` 计算有效输入摘要，涵盖目标、会话、文本、附件、引用与执行属性。协调库事务保存接纳、Run 与投递；同 nonce 同输入回原记录，异输入报冲突。
+3. outbox 幂等投影入站后，Run 排进对应 Bot 的 `user > agent > background` 队列；直接私聊在 user lane 内优先于 group-member。
+4. 每 Bot 仅一个实际 segment。用户排队超过 120 秒请求取消，再过 30 秒尚未退出记 `stuck`，执行槽保持占用；`forceRelease` 也仅请求取消。`drain` 等待执行与取消钩子真实结束。
+5. 工具前检查执行身份与取消版本。审批/问答保存绑定 Run、callId、参数摘要的恢复点并释放槽；批准保存决议，同一 Run 的新 segment 重新排队，单次批准只覆盖原调用。停止使待决及批准未执行卡失效。
+6. 群成员读取群 Store 的唯一业务历史；其他成员作为外部输入，自己的发言作为 assistant。当前 Run 固定输入水位，未来排队消息不会提前进入模型上下文。私聊、群、任务记忆默认分开。
+7. `delegate_task` 在独立 task 会话执行，只接受本地目标。父 Run 等依赖时释放槽；子任务终态和 completion outbox 同事务保存，结果满足依赖后只恢复一次父 Run。
+8. 终态和结果持久保存，SSE 按显示会话路由，重连可重拉快照。重启重排安全的 accepted 工作；执行中但结果未确认的工作记 `needs-reconciliation`。有绑定的待决交互恢复，无绑定旧卡过期。
+
+| 查询 | 当前用途 |
+| --- | --- |
+| `promptAcceptanceStatus` | 按 clientNonce 查询接纳与 Run 状态 |
+| `getRunStatus` | 按 runId 查询持久结果 |
+| `listTasks` / `getTask` | 任务关系、状态与结果 |
+| `cancelTask` | 请求取消指定任务，返回当前快照，不提前宣告结束 |
+| `getAcceptanceLedgerStatus` | 旧台账诊断加协调库状态计数 |
+
+此前全量回归为 **171 通过、3 跳过（共 174）**；本次为文档核对，未重新验证 GUI、真实模型或安装包。
+
+## 历史线上流程与早期实现
+
+以下历史分析基于线上 bundle `2e44baf`（`sand-host-bundle-2e44baf.tgz`，sha256 `e2caadd9…`）逐模块核对。标 **F** 为源码事实，**M（历史）** 为本项目对应实现。
 
 ## 0. 一句话结论
 
@@ -12,7 +37,7 @@
 
 ## 1. 接纳（Admission）
 
-```
+```text
 client                gateway               ledger                queue
   │  POST /api/sendPrompt                     │                     │
   ├────────────────────>│                      │                     │
@@ -37,7 +62,7 @@ client                gateway               ledger                queue
   - `unknown-durability`（历史被淘汰或降级，无法诚实回答）
 - 写坏的文件必须隔离成 `send-acceptance.json.corrupt-<ms>`，并记 `corruptResetAtMs`；淘汰旧记录记 `evictionHorizonMs`；写入失败记 `.degraded` 标记
 
-**M** `src/acceptance.mjs` 逐条实现，含 `MAX_DEGRADED_WINDOWS=8`、`.degraded` marker、`corrupt-` 隔离。测试覆盖三种 lookup 结果、nonce 冲突、坏文件降级。
+**M（历史）** `src/acceptance.mjs` 逐条实现，含 `MAX_DEGRADED_WINDOWS=8`、`.degraded` marker、`corrupt-` 隔离。测试覆盖三种 lookup 结果、nonce 冲突、坏文件降级。
 
 ---
 
@@ -71,7 +96,7 @@ this.refuseBoxTurn(gatedAgentId ?? "unknown");   // ← 无条件
 | `startFreshConversation` / `rollBackConversation` | 同上 |
 | `respondToWidget` / `submitSecret` / `dismissWidget` | 同上 |
 
-**M** `engine.route(agentId)` 返回 `{harness, lane, runnable, reason}`：
+**M（历史）** `engine.route(agentId)` 返回 `{harness, lane, runnable, reason}`：
 - `temporal` → `lane: 'server'`, `runnable: false`，拒绝时抛 `send/agent-unavailable`
 - `box` → `lane: 'retired'`, `runnable: false`
 - 其它 → `lane: 'local'`, `runnable: true`
@@ -97,7 +122,7 @@ this.refuseBoxTurn(gatedAgentId ?? "unknown");   // ← 无条件
 - `escape` 做的是：`active.item.resolve()`，把 active 的 settled promise 丢进 `zombies`，`queue.active = null`，然后 `pump()` 下一个
 - 被放弃的 run 之后真完成时，`onTaskSettled` 发现 `queue.active.generation !== active.generation`，只上报 `late_settle`，**不复活、不改状态**
 
-**M** `src/scheduler.mjs` 逐条实现。测试覆盖：lane 优先级、群聊让路、单 agent 串行、多 agent 并行、120s+30s 的 trip/escape/late_settle 三阶段、`dispose` 取消排队任务、诊断字段。
+**M（历史）** `src/scheduler.mjs` 逐条实现。测试覆盖：lane 优先级、群聊让路、单 agent 串行、多 agent 并行、120s+30s 的 trip/escape/late_settle 三阶段、`dispose` 取消排队任务、诊断字段。
 
 ---
 
@@ -129,7 +154,7 @@ var TurnExecutionRegistry = class {
 | `conversationTooLarge` | 会话过大 |
 | `turnRetryable` / `streamReset` / `backendRejected` / `agentUnclassified` | 其余 |
 
-**M** 我实现的是简化的 `turn-error` 事件 + `interrupted`/`error`/`done` 三态。**这层没有对齐**，因为本地执行器本来就是假的；照抄分类表只会得到一堆永远触发不了的分支。
+**M（历史）** 我实现的是简化的 `turn-error` 事件 + `interrupted`/`error`/`done` 三态。**这层没有对齐**，因为本地执行器本来就是假的；照抄分类表只会得到一堆永远触发不了的分支。
 
 ---
 
@@ -137,7 +162,7 @@ var TurnExecutionRegistry = class {
 
 **F** `server-agent-proxy` 日志出现过：
 
-```
+```text
 server transcript tail evicted 2 settled agent state(s) holding 3 row(s);
 2 state(s) holding 525 row(s) retained
 server transcript tail dropped (attempt 1): ConnectError
@@ -147,13 +172,13 @@ server transcript tail dropped (attempt 1): ConnectError
 
 **F** `TranscriptEntryPublisher.publishAgent` 对 temporal agent 直接跳过（旧分析已确认）。
 
-**M** 我的等价物是 `GET /events` SSE + `getAgentTranscript` 重拉。语义相同（事件流 + 快照兜底），实现不同（本地内存总线 vs 服务端 tail）。
+**M（历史）** 我的等价物是 `GET /events` SSE + `getAgentTranscript` 重拉。语义相同（事件流 + 快照兜底），实现不同（本地内存总线 vs 服务端 tail）。
 
 ---
 
 ## 6. 完整时序（把上面拼起来）
 
-```
+```text
 用户发一条消息
   │
   1. gateway 看 profile.harness
@@ -179,7 +204,7 @@ server transcript tail dropped (attempt 1): ConnectError
 
 ---
 
-## 7. 本项目与线上的差距（明说）
+## 7. 早期本项目与线上的差距（历史快照）
 
 | 环节 | 线上 | mygrokbot | 差异性质 |
 | --- | --- | --- | --- |
@@ -242,7 +267,7 @@ parkFailedRecreate(startedAt) {
 
 即：
 
-```
+```text
 host 启动
   → localWorkAllowed = false
   → reconcile 身份 + 迁移 barrier（可能多条 lane）
@@ -252,4 +277,4 @@ host 启动
 
 **这条解释了为什么"本地回合退役"与"本地工作仍有开关"并存**：退役的是 `sendPrompt` 的用户回合路径；`localWorkAllowed` 管的是 routine wake、延迟本地任务、以及启动恢复期的并发安全。两者不在同一层。
 
-**M** 我没有实现这一层（个人版没有迁移 barrier、没有 parked 状态）。这是**已知差距**，不是遗漏：照抄一个没有迁移对象的 barrier 只会得到死代码。
+**M（历史）** 我没有实现这一层（个人版没有迁移 barrier、没有 parked 状态）。这是**已知差距**，不是遗漏：照抄一个没有迁移对象的 barrier 只会得到死代码。

@@ -1,6 +1,23 @@
 # MVP 验收清单
 
-服务已在跑：**http://127.0.0.1:8899**
+## 当前复验入口（2026-10-22，P0/P1 后）
+
+当前功能与启动配置分别见 [CORE_FEATURES.md](CORE_FEATURES.md)、[BUILD_AND_RUN.md](BUILD_AND_RUN.md)，执行协议见 [EXECUTION.md](EXECUTION.md)。下文是早期 MVP 环境和实测记录，示例地址、模型、名册与按钮文案不代表当前进程状态，也无需复制当时的内网配置。
+
+当前完整代码回归记录为 **174 项：171 通过、3 跳过**；本次文档更新未启动服务、安装依赖、编译打包或新增 GUI 验收。执行改造后的人工清单见 [ACCEPTANCE.md](ACCEPTANCE.md)。
+
+| 验收重点 | 当前预期 |
+| --- | --- |
+| 审批/问答 | 卡片绑定原 Run 与 callId；决议落盘后排队，以同 runId 新 segment 恢复；旧无绑定卡过期 |
+| 同 Bot 串行 | 停止先请求取消，执行真实退出后才释放槽；watchdog 120s/30s 后记 stuck，仍保留槽 |
+| 群与私聊 | 群只有一份业务历史，不复制成员 DM；停止轮次只取消对应成员 Run |
+| 可靠派工 | 本地 delegate_task；等待子任务释放槽，终态结果经持久 outbox 自动恢复父 Run |
+| 重启 | 已完成结果保持；安全 accepted 工作重排，运行中未知结果记 needs-reconciliation |
+| 桌面 | 已采用 Electron，与 Web 共用后端；打包脚本可用性和安装包验收分别记录 |
+
+## 历史 MVP 环境与验收
+
+当时服务地址：**http://127.0.0.1:8899**
 
 数据根 `~/.mygrokbot`（3 个 bot + 1 个群组 + 1 个 routine），模型 `workbuddy/hy3` @ `192.168.49.201:3425`。
 
@@ -90,14 +107,11 @@
 
 ---
 
-## 7. 持久化
+## 7. 持久化（历史步骤）
 
 关闭浏览器、重启服务，再打开：
 
-```bash
-pkill -f "mgb.mjs serve"
-MGB_DATA_ROOT="$HOME/.mygrokbot" MGB_REAL_KEY=... node bin/mgb.mjs serve --port 8899
-```
+停止当前服务后，使用 [BUILD_AND_RUN.md](BUILD_AND_RUN.md) 中与所选数据根一致的命令重新启动。重启验收同时查询接纳、Run 与交互恢复结果。
 
 预期：对话历史、群组、routine、审批状态全都还在。
 
@@ -123,7 +137,7 @@ MGB_DATA_ROOT="$HOME/.mygrokbot" MGB_REAL_KEY=... node bin/mgb.mjs serve --port 
 | --- | --- |
 | 移动端 | 有断点（<900px 隐藏侧栏），未专门设计 |
 | 媒体/贴纸 | Library tab 为空 |
-| 桌面端 | 未打包（可后续 Tauri） |
+| 桌面端 | 当时未打包；后续已采用 Electron，见 [DESKTOP.md](DESKTOP.md) |
 | `harness=temporal` 的 bot | 走本机代理替身，不是真云端 |
 
 

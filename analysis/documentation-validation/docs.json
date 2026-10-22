@@ -1,0 +1,21 @@
+{
+  "documents": [
+    "README.md",
+    "docs/BUILD_AND_RUN.md",
+    "docs/CORE_FEATURES.md",
+    "docs/EXECUTION.md",
+    "docs/DESKTOP.md",
+    "docs/LIVE.md",
+    "docs/ARCHITECTURE.md",
+    "docs/FLOW.md",
+    "docs/ROOMS.md",
+    "docs/ACCEPTANCE.md",
+    "docs/GAPS.md",
+    "docs/MVP.md",
+    "docs/CHANGELOG.md"
+  ],
+  "checkedRelativeLinks": 63,
+  "fences": "passed",
+  "newGuideShellSyntax": "passed",
+  "gitDiffCheck": "passed"
+}

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "E01",
+    "observed": {
+      "receiptSuccess": true,
+      "recipientCount": 0,
+      "receiverSawPost": false,
+      "roomPostWritten": false
+    }
+  },
+  {
+    "id": "E02",
+    "observed": {
+      "privateHistoryInGroupInput": true,
+      "addressedPromptStored": true,
+      "addressedPromptHidden": true,
+      "priorGroupInNextInput": false
+    }
+  },
+  {
+    "id": "E03",
+    "observed": {
+      "roomOneAnswers": 0,
+      "roomTwoAnswers": 1,
+      "taskOneAnswerInRoomTwo": true,
+      "taskTwoAnswerDelivered": false
+    }
+  },
+  {
+    "id": "E04",
+    "observed": {
+      "sameNonceRoomPosts": 2,
+      "modelCalls": 2,
+      "queueSources": [
+        "user",
+        "user"
+      ]
+    }
+  },
+  {
+    "id": "E05",
+    "observed": {
+      "approvalNeededToTrigger": false,
+      "privateIntakeHiddenDuringGroup": true
+    }
+  },
+  {
+    "id": "E06",
+    "observed": {
+      "parkedState": "awaiting-approval",
+      "privateWhileParkedHidden": true,
+      "denialError": "turnId is not defined",
+      "storeHiddenAfterDenial": true
+    }
+  },
+  {
+    "id": "E07",
+    "observed": {
+      "beforeReconstruction": "done",
+      "afterReconstruction": "accepted",
+      "admissionDurable": true
+    }
+  },
+  {
+    "id": "E08",
+    "observed": {
+      "sameMessageIdRowsAfterReconstruction": 2,
+      "duplicateDetected": false
+    }
+  },
+  {
+    "id": "E09",
+    "observed": {
+      "secondTarget": "bot-b",
+      "replayedTarget": "bot-a",
+      "conflict": false
+    }
+  }
+]

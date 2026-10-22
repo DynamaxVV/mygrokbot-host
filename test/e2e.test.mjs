@@ -203,21 +203,26 @@ test('peer delivery is idempotent on messageId', async () => {
   assert.equal(transcript.result.filter((e) => e.peerMessageId === 'm-1').length, 1);
 });
 
-test('a group post reaches members without interrupting them', async () => {
-  const group = host.roster.create({ name: 'Ops Room', isGroup: true, memberIds: [] });
+test('a group post persists once in the room without interrupting or copying into private chats', async () => {
   const m1 = host.roster.create({ name: 'Member One' });
   const m2 = host.roster.create({ name: 'Member Two' });
-  host.roster.update(group.id, { memberIds: [m1.id, m2.id, agentId] });
+  const group = host.roster.createGroup({ name: 'Ops Room', memberAgentIds: [m1.id, m2.id, agentId] });
+  const callsBefore = mock.requests.length;
 
   const posted = await rpc('messageAgent', { fromAgentId: agentId, to: 'Ops Room', text: 'standup at 10', priority: true });
   assert.equal(posted.result.delivered, true);
   assert.deepEqual(posted.result.members.sort(), [m1.id, m2.id].sort());
   assert.ok(posted.result.notes?.some((n) => /priority is 1:1 only/.test(n)));
+  assert.equal(posted.result.woken, false);
+  assert.equal(mock.requests.length, callsBefore);
 
   const t = await rpc('getAgentTranscript', { agentId: m1.id });
-  const msg = t.result.find((e) => e.fromAgent);
-  assert.match(msg.message.content, /^\[group:Ops Room\] standup at 10/);
-  assert.equal(msg.held, true, 'group posts never wake a member');
+  assert.ok(!t.result.some((e) => e.message?.content?.includes('standup at 10')), 'private chat has no group copy');
+  const room = await rpc('getAgentTranscript', { agentId: group.id });
+  const msg = room.result.find((e) => e.fromAgent?.id === agentId);
+  assert.equal(msg.message.content, 'standup at 10');
+  const input = host.engine.buildMessages(m1.id, { conversationId: `group:${group.id}` });
+  assert.ok(input.some((m) => m.role === 'user' && m.content?.includes('standup at 10')), 'group members can read the canonical post');
 });
 
 test('provenance rows carry the exact real field set', async () => {
@@ -378,6 +383,8 @@ test('a due routine runs once and records a real outcome', async () => {
     return (res.result ?? []).find((e) => e.kind === 'message' && String(e.message?.content).includes('[routine:Daily Digest]'));
   });
   assert.ok(entry);
+  assert.equal(host.engine.getRun(entry.runId).lane, 'background');
+  assert.equal(host.engine.getRun(entry.runId).source, 'background');
 
   await waitFor(async () => {
     const routine = host.routines.list(bot.id)[0];
