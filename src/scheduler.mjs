@@ -168,7 +168,7 @@ export class RunScheduler {
     const settled = new Promise((res) => {
       markSettled = res;
     });
-    const active = { item: next, startedAtMs: this.clock.now(), generation, settled, phase: 'running' };
+    const active = { item: next, startedAtMs: this.clock.now(), generation, settled, markSettled, phase: 'running' };
     queue.active = active;
 
     const jumpedBackground = next.lane === 'background' ? 0 : queue.pendingBackground.length;
@@ -203,6 +203,22 @@ export class RunScheduler {
         markSettled();
       },
     );
+  }
+
+  // Release the lane when the task demonstrably will not settle on its own (an aborted
+  // turn parked on an await that ignores the signal). Without this the queue stays
+  // blocked and every later send sits in "running" with no turn.
+  forceRelease(agentId, reason = 'forced release') {
+    const queue = this.queues.get(agentId);
+    const active = queue?.active;
+    if (!active) return false;
+    queue.active = null;
+    this.disarmWatchdog(queue);
+    try { active.item.reject(new Error(reason)); } catch { /* already settled */ }
+    active.markSettled?.();
+    this.telemetry.onWatchdog?.({ agentId, stage: 'forced_release', reason });
+    this.pump(agentId);
+    return true;
   }
 
   onTaskSettled(agentId, queue, active, failure) {

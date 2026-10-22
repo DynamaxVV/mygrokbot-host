@@ -196,11 +196,16 @@ export class AgentStore {
 
   // ---- transcript -------------------------------------------------------
   appendEntry(entry) {
+    // While a hidden turn runs, every row it writes inherits the flag. Doing it here is
+    // what keeps a group-triggered reasoning block out of the agent's own chat *as it
+    // streams*, not only after the turn ends.
+    const row = this.hideWrites && !entry.hidden ? { ...entry, hidden: true } : entry;
+    entry.hidden = row.hidden;
     const seq = Number(this.stmt('SELECT COALESCE(MAX(seq), 0) + 1 AS next FROM transcript_entries').get().next);
     this.stmt('INSERT INTO transcript_entries (seq, id, entry) VALUES (?, ?, ?)').run(
       seq,
-      entry.id,
-      JSON.stringify(entry),
+      row.id,
+      JSON.stringify(row),
     );
     return seq;
   }

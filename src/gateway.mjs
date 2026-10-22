@@ -93,6 +93,7 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
       agentCount: roster.list().length,
       streamingClients: bus.size,
       runningTurns: engine.running.size,
+      runningAgents: [...engine.running.keys()],
     }),
     // The box publishes a fixed port map; documenting it here keeps clients from
     // guessing. Values mirror what the real logs show.
@@ -241,6 +242,11 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
         description: parent.description ?? '',
         harness: parent.harness ?? 'local',
       });
+      // A branch is a continuation of its source, so it must inherit the model binding —
+      // without it the branch falls back to the built-in default provider and cannot run.
+      const sourceBinding = loadBindings(p.root).agents?.[id];
+      if (sourceBinding) setAgentBinding(p.root, branch.id, sourceBinding);
+
       const store = roster.store(branch.id);
       for (const row of rows.slice(0, cut + 1)) {
         const { seq, ...rest } = row;
@@ -305,15 +311,28 @@ export function createGateway({ p, roster, catalog, engine, tools, bus, routines
     // ---- prompts --------------------------------------------------------
     // Every method below checks isProxiedAgent first, the same guard the deployed host
     // applies on all of them: a temporal agent's work belongs to the server.
-    sendPrompt: async ({ agentId, prompt, clientNonce = null, attachmentPaths = [], replyTo = null }) => {
+    sendPrompt: async ({ agentId, prompt, clientNonce = null, attachmentPaths = [], replyTo = null, mentionAgentIds = null }) => {
       const id = roster.resolve(agentId);
-      if (!String(prompt ?? '').trim()) throw new Error('prompt is empty');
+      // An attachment-only message is legitimate: the files carry the meaning.
+      if (!String(prompt ?? '').trim() && !(attachmentPaths?.length)) throw new Error('prompt is empty');
       if (proxy?.isProxiedAgent(id)) {
         const forwarded = await proxy.act({
           method: 'sendPrompt',
           args: { agentId: id, prompt: String(prompt), clientNonce: clientNonce ?? randomUUID(), attachmentPaths, replyTo },
         });
         return { ...forwarded, agentId: id, proxied: true };
+      }
+      // A group is a fan-out target, not a model: post the message into the room and
+      // deliver it to every member. Running a turn here would need a binding the group
+      // deliberately does not have (and produced the provider 401).
+      if (roster.profile(id)?.isGroup === true) {
+        return engine.postFromOperator({
+          groupId: id,
+          text: String(prompt),
+          clientNonce,
+          attachmentPaths,
+          onlyMemberIds: Array.isArray(mentionAgentIds) ? mentionAgentIds.map((m) => roster.resolve(m)) : null,
+        });
       }
       return engine.admit({ agentId: id, prompt: String(prompt), clientNonce, attachmentPaths, replyTo });
     },

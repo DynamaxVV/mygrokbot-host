@@ -71,6 +71,16 @@ export class Roster {
       harness: profile.harness ?? 'local',
       createdAtMs: metadata.createdAtMs ?? fs.statSync(this.p.agentDir(id)).birthtimeMs,
       lastActivityMs: last?.timestampMs ?? metadata.createdAtMs ?? 0,
+      // Preview text for the roster row: the newest human-readable line in the chat.
+      lastText: (() => {
+        const rows = store.readWindow({ limit: 24 }).filter((e) => !e.hidden);
+        for (const e of rows) {
+          const content = e.kind === 'send-message' || e.kind === 'message'
+            ? (e.message?.content ?? e.text) : null;
+          if (typeof content === 'string' && content.trim()) return content.trim().slice(0, 160);
+        }
+        return '';
+      })(),
       settings: this.settings(id),
     };
   }

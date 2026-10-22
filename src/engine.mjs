@@ -57,6 +57,8 @@ export class TurnEngine {
     });
     this.approvedCommands = new Set(); // command -> approved for the current process lifetime
     this.aborts = new Map(); // agentId -> AbortController for the in-flight model stream
+    this.watchdogs = new Map(); // agentId -> timer that force-ends a runaway turn
+    this.groupOrigin = new Map(); // agentId -> groupId for turns triggered by a group post
     this.hostSettings = () => ({});
     this.ledger = new AcceptanceLedger(p.root);
     this.receivedPeerMessageIds = new Set();
@@ -92,6 +94,8 @@ export class TurnEngine {
       '- Side-effectful shell commands can require the user’s approval; when a tool result says approval_required, stop and say what you need approved.',
       '- To hand work to another bot, use message_agent. Its answer arrives as a message from that bot; you do not block waiting.',
       '- Never claim you ran something you did not run, and never invent tool output.',
+      '- Your visible reply is the message itself. Do not narrate tool calls, delivery status,',
+      '  priority flags, or your internal plan in it — those belong in the transcript, not the text.',
       '',
       `## Time`,
       `Now: ${now.toISOString()} (${tz}). Treat all times as ${tz} unless asked otherwise.`,
@@ -124,9 +128,24 @@ export class TurnEngine {
   }
 
   // Convert the durable transcript into chat messages for the provider.
-  buildMessages(agentId) {
+  buildMessages(agentId, { keepTurnId = null } = {}) {
     const store = this.roster.store(agentId);
-    const entries = store.readAll({ includeToolCalls: true });
+    // Hidden rows belong to another surface (a group). They stay in storage so the host
+    // can audit them, but they must not enter this agent's context — otherwise group
+    // chatter silently shapes a private conversation. The only exception is the turn
+    // currently running, which needs its own prompt.
+    const all = store.readAll({ includeToolCalls: true });
+    // Fragments from an interrupted turn are not replayed as assistant history.
+    const replayable = all.filter((e) => !(e.partial === true));
+    // A hidden turn is hidden as a whole: its prompt, reasoning, tool calls and answer
+    // all belong to the other surface, not here.
+    const hiddenTurns = new Set(replayable.filter((e) => e.hidden && e.turnId).map((e) => e.turnId));
+    const entries = replayable.filter((e) => {
+      const belongsToHiddenTurn = Boolean(e.turnId && hiddenTurns.has(e.turnId));
+      if (!e.hidden && !belongsToHiddenTurn) return true;
+      // Hidden content is visible only to the turn that owns it.
+      return Boolean(keepTurnId && e.turnId === keepTurnId);
+    });
     const messages = [{ role: 'system', content: this.buildSystemPrompt(agentId) }];
     const pendingToolCalls = [];
 
@@ -228,7 +247,7 @@ export class TurnEngine {
     return { harness: harness ?? 'local', lane: 'local', runnable: true, reason: null };
   }
 
-  admit({ agentId, prompt, clientNonce = null, trigger = 'user', attachmentPaths = [], replyTo = null, lane = 'user', source = 'user', viaProxy = false }) {
+  admit({ agentId, prompt, clientNonce = null, trigger = 'user', attachmentPaths = [], replyTo = null, lane = 'user', source = 'user', viaProxy = false, hidden = false }) {
     const id = this.roster.resolve(agentId);
     const route = this.route(id);
     // `viaProxy` is set only by the proxy transport: it is the executor for this
@@ -269,7 +288,8 @@ export class TurnEngine {
     }
 
     const store = this.roster.store(id);
-    const entry = userMessageEntry({ text: prompt, clientNonce: nonce, attachmentPaths, replyTo });
+    const entry = { ...userMessageEntry({ text: prompt, clientNonce: nonce, attachmentPaths, replyTo }),
+      ...(hidden ? { hidden: true } : {}) };
     store.appendEntry(entry);
     this.ledger.update('host', nonce, { echoEntryId: entry.id });
     this.changedMids.set(nonce, entry.id);
@@ -284,6 +304,7 @@ export class TurnEngine {
       trigger,
       lane,
       source,
+      ...(hidden ? { hidden: true } : {}),
       inputDigest: inputDigest(prompt),
     };
     this.acceptances.set(nonce, acceptance);
@@ -365,7 +386,42 @@ export class TurnEngine {
     acceptance.state = 'running';
     acceptance.turnId = turnId;
     this.running.set(agentId, { turnId, startedAt: Date.now() });
-    this.bus.publish({ type: 'turn-start', agentId, turnId, entryId: acceptance.entryId, clientNonce: acceptance.clientNonce });
+    // Stamp the prompt row with its turn so a hidden prompt can still be included when
+    // building the messages for this very turn (and excluded on every later one).
+    try {
+      const promptStore = this.roster.store(agentId);
+      const row = promptStore.readWindow({ limit: 50 }).find((e) => e.id === acceptance.entryId);
+      if (row && row.turnId !== turnId) promptStore.updateEntry(row.id, (e) => ({ ...e, turnId }));
+    } catch { /* the row may already be gone; the turn can still run */ }
+    // Hidden turns stream their rows with hidden:true, and the start event says so too,
+    // so the client can ignore the live reasoning instead of flashing it in the 1:1 chat.
+    if (acceptance.hidden) store.hideWrites = true;
+    this.bus.publish({
+      type: 'turn-start', agentId, turnId, entryId: acceptance.entryId,
+      clientNonce: acceptance.clientNonce,
+      ...(acceptance.hidden ? { hidden: true } : {}),
+    });
+
+    // Hard ceiling so a hung await cannot park the turn forever.
+    const maxTurnMs = this.hostSettings()?.maxTurnMinutes
+      ? this.hostSettings().maxTurnMinutes * 60_000
+      : 30 * 60_000;
+    const watchdog = setTimeout(() => {
+      acceptance.abortRequested = true;
+      acceptance.timeout = true;
+      const a = this.aborts.get(agentId);
+      if (a) a.abort(new Error('turn timeout'));
+      else acceptances.delete(acceptance.id);
+      this.running.delete(agentId);
+      this.bus.publish({ type: 'turn-interrupted', agentId, turnId, timeout: true });
+      this.bus.publish({
+        type: 'turn-error', agentId, turnId,
+        error: `本轮超过 ${Math.round(maxTurnMs / 60000)} 分钟未结束，已自动终止`,
+        clientNonce: acceptance.clientNonce,
+      });
+    }, maxTurnMs);
+    watchdog.unref?.();
+    this.watchdogs.set(agentId, watchdog);
 
     const startedAt = Date.now();
     let textEntry = null;
@@ -380,7 +436,7 @@ export class TurnEngine {
           err.name = 'AbortError';
           throw err;
         }
-        const messages = this.buildMessages(agentId);
+        const messages = this.buildMessages(agentId, { keepTurnId: turnId });
         let reasoningEntryRef = null;
         let toolCalls = null;
         let route = null;
@@ -423,7 +479,8 @@ export class TurnEngine {
           if (event.type === 'text') {
             accumulated += event.text;
             if (!textEntry) {
-              textEntry = assistantTextEntry({ text: '', streaming: true, turnId });
+              textEntry = { ...assistantTextEntry({ text: '', streaming: true, turnId }),
+                ...(acceptance.hidden ? { hidden: true } : {}) };
               store.appendEntry(textEntry);
             }
             store.updateEntry(textEntry.id, (e) => ({ ...e, message: { type: 'text', content: accumulated } }));
@@ -602,6 +659,11 @@ export class TurnEngine {
       });
       this.running.delete(agentId);
       this.aborts.delete(agentId);
+      if (acceptance.hidden) {
+        store.hideWrites = false;
+        this.mirrorToGroup(agentId, accumulated);
+        this.hideTurn(agentId, turnId);
+      }
       this.appendWorkLog({ agentId, prompt: acceptance.entryId, status: 'done', elapsedMs: Date.now() - startedAt });
     } catch (error) {
       const aborted = error?.name === 'AbortError'
@@ -609,8 +671,18 @@ export class TurnEngine {
         || this.aborts.get(agentId)?.signal.aborted === true;
       acceptance.state = aborted ? 'interrupted' : 'error';
       this.aborts.delete(agentId);
+      clearTimeout(this.watchdogs.get(agentId));
+      this.watchdogs.delete(agentId);
       if (aborted) {
-        if (textEntry) store.updateEntry(textEntry.id, (e) => ({ ...e, streaming: false }));
+        if (textEntry) {
+          store.updateEntry(textEntry.id, (e) => ({ ...e, streaming: false, partial: true }));
+        }
+        // The prompt of an interrupted turn is dropped from replay as well: with no
+        // answer attached it made later turns try to answer that old question again.
+        try {
+          const promptRow = store.readWindow({ limit: 200 }).find((e) => e.id === acceptance.entryId);
+          if (promptRow) store.updateEntry(promptRow.id, (e) => ({ ...e, partial: true }));
+        } catch { /* best effort */ }
         store.appendEntry(noticeEntry(
           (this.hostSettings()?.language === 'en') ? 'turn interrupted by the operator' : '已停止本轮生成',
           { level: 'warn', turnId },
@@ -629,6 +701,7 @@ export class TurnEngine {
         timestampMs: Date.now(),
       });
       this.bus.publish({ type: 'turn-error', agentId, turnId, error: acceptance.error, clientNonce: acceptance.clientNonce });
+      if (acceptance.hidden) { store.hideWrites = false; this.hideTurn(agentId, turnId); }
       this.running.delete(agentId);
       this.appendWorkLog({ agentId, prompt: acceptance.entryId, status: 'failed', error: acceptance.error });
       this.writeProvenance({
@@ -775,11 +848,21 @@ export class TurnEngine {
       if (a.agentId === id && (a.state === 'accepted' || a.state === 'running')) {
         a.abortRequested = true;
         a.interruptedBy = 'operator';
-        // A queued turn never starts: mark it settled now.
         if (a.state === 'accepted') a.state = 'interrupted';
       }
     }
     if (abort) abort.abort();
+    // Nothing streaming still means the bookkeeping must settle: a turn whose stream
+    // already died would otherwise stay "running" forever.
+    if (!streaming) {
+      this.running.delete(id);
+      this.aborts.delete(id);
+      clearTimeout(this.watchdogs.get(id));
+      this.watchdogs.delete(id);
+      // The turn is parked on an await that will never settle; release the lane so the
+      // next send is not stuck behind it.
+      this.scheduler.forceRelease(id, 'interrupted while idle');
+    }
     this.bus.publish({ type: 'turn-interrupted', agentId: id, requested: true });
     return { interrupted: true, agentId: id, streaming };
   }
@@ -883,6 +966,124 @@ export class TurnEngine {
   }
 
   // Group post: text-only, immediate, no interrupt. Members read it on their turn.
+  // Hide every row produced by a turn, not only the prompt and the answer. A hidden turn
+  // must not leave an orphan reasoning block behind in the agent's own chat.
+  hideTurn(agentId, turnId) {
+    if (!turnId) return;
+    try {
+      const store = this.roster.store(agentId);
+      for (const e of store.readWindow({ limit: 200 })) {
+        if (e.turnId === turnId && !e.hidden) {
+          store.updateEntry(e.id, (x) => ({ ...x, hidden: true }));
+        }
+      }
+    } catch { /* best effort: the rows are still filtered by turn on the read path */ }
+  }
+
+  // Group text reaches members as a normal message, but with one rule attached: the reply
+  // is the message. Without it the model pasted tool results and delivery flags into it.
+  groupInboundText(groupName, text, selfName = null) {
+    // The prefix stays first (it identifies the room); the rule rides after the text so
+    // it reads as a note about the message rather than replacing its opening.
+    return `[group:${groupName}] ${text}`
+      + (selfName ? `\n\n(you are ${selfName} in this group — answer as yourself)` : '')
+      + '\n\n(note: reply with the message itself only — no tool narration,'
+      + ' no delivery status, no plan)';
+  }
+
+  // A member answer produced for a group post is copied into the room, so the group reads
+  // as a conversation instead of a pile of silent forwards.
+  mirrorToGroup(agentId, text) {
+    const groupId = this.groupOrigin.get(agentId);
+    if (!groupId) return;
+    this.groupOrigin.delete(agentId);
+    const body = String(text ?? '').trim();
+    if (!body) return;
+    const from = this.roster.summary(agentId);
+    const store = this.roster.store(groupId);
+    const entry = {
+      kind: 'send-message',
+      id: `msg-${randomUUID()}`,
+      fromAgent: { id: agentId, name: from?.name ?? agentId },
+      message: { type: 'text', content: body },
+      timestampMs: Date.now(),
+    };
+    store.appendEntry(entry);
+    this.bus.publish({ type: 'transcript', agentId: groupId, entry });
+  }
+
+  // The operator writing into a group: the message lands in the room and is delivered to
+  // each member as a group inbound message. No model turn runs for the group itself.
+  async postFromOperator({ groupId, text, clientNonce = null, onlyMemberIds = null, attachmentPaths = [] }) {
+    const group = this.roster.profile(groupId) ?? {};
+    const store = this.roster.store(groupId);
+    const entry = {
+      kind: 'message',
+      id: `msg-${randomUUID()}`,
+      role: 'user',
+      message: { type: 'text', content: text },
+      timestampMs: Date.now(),
+      ...(clientNonce ? { clientNonce } : {}),
+      ...(attachmentPaths.length ? { attachments: attachmentPaths } : {}),
+    };
+    store.appendEntry(entry);
+    this.bus.publish({ type: 'transcript', agentId: groupId, entry });
+
+    // Members live in group.json, not in the profile.
+    const members = this.roster.groupMembers(groupId);
+    const delivered = [];
+    // @mentions narrow who answers: everyone still receives the message, but only the
+    // mentioned members run a turn.
+    let only = Array.isArray(onlyMemberIds) ? onlyMemberIds.filter((id) => members.includes(id)) : [];
+    if (!only.length) {
+      only = members.filter((id) => {
+        const name = this.roster.summary(id)?.name;
+        return name && text.includes(`@${name}`);
+      });
+    }
+    const addressed = only.length ? new Set(only) : null;
+
+    for (const memberId of members) {
+      delivered.push(memberId);
+      if (addressed && !addressed.has(memberId)) {
+        // Received, not answered: a hidden row so the member can read it later.
+        const store = this.roster.store(memberId);
+        const row = agentInboundEntry({
+          from: { id: 'operator', name: 'operator' },
+          text: this.groupInboundText(group.name ?? groupId, text, this.roster.summary(memberId)?.name),
+          images: [], priority: false,
+        });
+        row.hidden = true;
+        store.appendEntry(row);
+        this.bus.publish({ type: 'transcript', agentId: memberId, entry: row });
+        continue;
+      }
+      // Group traffic belongs to the room only: no row is written into the member's own
+      // transcript, and the turn it starts is flagged hidden so its reply stays out too.
+      this.groupOrigin.set(memberId, groupId);
+      const withFiles = attachmentPaths.length
+        ? `${this.groupInboundText(group.name ?? groupId, text, this.roster.summary(memberId)?.name)}\n\n`
+          + `(attachments: ${attachmentPaths.join(', ')})`
+        : this.groupInboundText(group.name ?? groupId, text, this.roster.summary(memberId)?.name);
+      try {
+        this.admit({
+          agentId: memberId,
+          prompt: withFiles,
+          trigger: 'group',
+          hidden: true,
+        });
+      } catch { this.groupOrigin.delete(memberId); }
+    }
+    return {
+      groupId,
+      entryId: entry.id,
+      clientNonce,
+      members: delivered,
+      fanout: true,
+      state: 'accepted',
+    };
+  }
+
   async postToGroup({ fromAgentId, groupId, text, images = [], priority = false }) {
     const group = this.roster.profile(groupId) ?? {};
     const members = Array.isArray(group.memberIds) ? group.memberIds : [];
@@ -893,9 +1094,15 @@ export class TurnEngine {
     const delivered = [];
     for (const memberId of members) {
       if (memberId === fromAgentId) continue;
+      // The row is recorded (members read it at their next turn) but flagged hidden, so
+      // it never shows up in the member's own conversation.
       const store = this.roster.store(memberId);
-      const entry = agentInboundEntry({ from: { id: fromAgentId, name: from?.name ?? fromAgentId }, text, images: [], priority: false });
-      entry.message.content = `[group:${group.name ?? groupId}] ${text}`;
+      const entry = agentInboundEntry({
+        from: { id: fromAgentId, name: from?.name ?? fromAgentId },
+        text, images: [], priority: false,
+      });
+      entry.message.content = this.groupInboundText(group.name ?? groupId, text);
+      entry.hidden = true;
       store.appendEntry(entry);
       this.bus.publish({ type: 'transcript', agentId: memberId, entry });
       delivered.push(memberId);

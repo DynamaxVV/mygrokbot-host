@@ -85,11 +85,10 @@
   #app.no-rail .rail { display: none; }
 
   @media (max-width: 1200px) {
-    #app { grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr); }
-    #app.overlay-open {
-      grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr) clamp(240px, 26vw, 320px);
-    }
-    #app.overlay-open .pane { display: flex; }
+    /* Keep all three tracks: dropping the pane track made the pane wrap onto a second
+       row, which halved every panel's height. A closed pane collapses its track to 0. */
+    #app { grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr) var(--pane-w, clamp(220px, 24vw, 300px)); }
+    #app.no-pane { grid-template-columns: var(--rail-w, 240px) minmax(0, 1fr) 0; }
   }
   /* Under 820px the conversation takes the whole width and both side panels become
      overlays. Cramming three tracks into a phone gives two unusable slivers. */
@@ -228,21 +227,34 @@
      a ring in the rail colour keeps them visually separate. */
   .avatar.group { position: relative; background: transparent; padding: 0;
     border-radius: 0; overflow: visible; }
-  .avatar.group .gcell { position: absolute; width: 60%; height: 60%;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 50%; overflow: visible; }
-  .avatar.group .gcell .avatar { display: block; }
+  /* Overlapping member silhouettes: each cell holds the member's own shape and the
+     cells press against each other, which is what makes it read as one group. */
+  .avatar.group .gcell { position: absolute; display: block; }
+  .avatar.group .gcell .avatar { display: block; width: 100%; height: 100%; }
+  /* Ring colour follows whatever the cluster sits on. */
+  .avatar.group .gcell svg > g > g { stroke: var(--rail); }
 
-  .avatar.group.n1 .gcell { width: 92%; height: 92%; left: 4%; top: 4%; font-size: 14px; }
-  .avatar.group.n2 .gcell:nth-child(1) { left: 2%;  top: 21%; }
-  .avatar.group.n2 .gcell:nth-child(2) { right: 2%; top: 21%; }
-  .avatar.group.n3 .gcell:nth-child(1) { left: 2%;  top: 2%; }
-  .avatar.group.n3 .gcell:nth-child(2) { right: 2%; top: 2%; }
-  .avatar.group.n3 .gcell:nth-child(3) { left: 21%; bottom: 2%; }
-  .avatar.group.n4 .gcell:nth-child(1) { left: 2%;  top: 2%; }
-  .avatar.group.n4 .gcell:nth-child(2) { right: 2%; top: 2%; }
-  .avatar.group.n4 .gcell:nth-child(3) { left: 2%;  bottom: 2%; }
-  .avatar.group.n4 .gcell:nth-child(4) { right: 2%; bottom: 2%; }
+  /* Two members sit shoulder to shoulder; three form a triangle; four form a 2x2. Each
+     layout is tuned so the shapes overlap by roughly a quarter of a cell. */
+  .avatar.group.n1 .gcell { left: 4%; top: 4%; }
+  .avatar.group.n2 .gcell:nth-child(1) { left: 0;    top: 17%; }
+  .avatar.group.n2 .gcell:nth-child(2) { right: 0;   top: 17%; }
+  .avatar.group.n3 .gcell:nth-child(1) { left: 0;    top: 0; }
+  .avatar.group.n3 .gcell:nth-child(2) { right: 0;   top: 0; }
+  .avatar.group.n3 .gcell:nth-child(3) { left: 20%;  bottom: 0; }
+  /* Pulled slightly outside the box so the four corners stay readable while still
+     overlapping heavily in the middle. */
+  .avatar.group.n4 .gcell:nth-child(1) { left: -1%;  top: -1%; }
+  .avatar.group.n4 .gcell:nth-child(2) { right: -1%; top: -1%; }
+  .avatar.group.n4 .gcell:nth-child(3) { left: -1%;  bottom: -1%; }
+  .avatar.group.n4 .gcell:nth-child(4) { right: -1%; bottom: -1%; }
+
+  /* "+N" badge takes the fourth slot when a group has more than four members. */
+  .avatar.group .gmore { display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; background: var(--surface-2); color: var(--dim);
+    border: 1.5px solid var(--surface); font-size: 9px; font-weight: 700;
+    box-sizing: border-box; line-height: 1; }
+  .avatar.group.n4 .gmore { right: -1%; bottom: -1%; }
 
   .agent { display: flex; gap: 10px; align-items: center; padding: 9px 8px;
     border-radius: 9px; cursor: pointer; }
@@ -355,6 +367,17 @@
   .service { flex: 0 0 auto; align-self: center; max-width: 78%; margin: 12px 0 0; padding: 4.5px 10px;
     border-radius: 14px; background: rgba(0,0,0,.055); color: var(--dim);
     font-size: 15px; line-height: 1.35; text-align: center; }
+  /* A warning keeps the quiet service chip; only the text is a shade stronger so it
+     does not read as decoration, without turning into an alert banner. */
+  .service[data-level="warn"] { color: var(--text); opacity: .62; }
+
+  /* Interrupt card: same frame as an approval, one quiet line inside. */
+  .noticecard { border-radius: 13px; }
+  .noticecard .ct { text-transform: none; letter-spacing: 0; font-size: 12px;
+    font-weight: 600; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--surface-2)); }
+  .noticecard .nico { font-size: 11px; }
+  .noticecard .cb { font: inherit; font-size: 12.5px; color: var(--dim);
+    padding: 7px 13px 9px; white-space: pre-wrap; }
   @media (prefers-color-scheme: dark) {
     .service { background: rgba(255,255,255,.07); }
   }
@@ -383,7 +406,8 @@
   .msg + .cardwrap, .reasoning + .cardwrap { margin-block-start: 12px; }
   .cardwrap + .msg { margin-block-start: 12px; }
   .msg.group-mid .avatar, .msg.group-end .avatar { visibility: hidden; }
-  .msg .avatar { width: 30px; height: 30px; border-radius: 9px; font-size: 11px;
+  .msg .sname { font-size: 11px; font-weight: 600; color: var(--dim); padding: 0 2px 2px 2px; }
+  .msg .avatar { flex: none; width: 30px; height: 30px; border-radius: 9px; font-size: 11px;
     align-self: flex-end; margin-bottom: 2px; }
   /* Both sides share the same usable width (tweb: the bubble is capped by the message
      column, not by the text). Without flex-basis:100% a long message of mine stopped
@@ -413,14 +437,29 @@
   .msg.mine .quote .qwho { color: rgba(255,255,255,.9); }
   .msg.mine .quote .qtext { color: rgba(255,255,255,.75); }
 
-  .abox { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: flex-start; }
-  .aimg { max-width: 260px; max-height: 260px; border-radius: 10px; cursor: zoom-in;
-    display: block; object-fit: cover; }
-  .afile { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
-    border-radius: 8px; font-size: 11.5px; max-width: 240px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25); }
-  .msg:not(.mine) .afile { background: var(--surface-2); border-color: var(--line); }
+  /* Media block above the bubble. */
+  .abox { display: flex; flex-direction: column; gap: 6px; margin: 0 0 4px;
+    width: fit-content; max-width: 100%; position: relative; }
+  .msg.mine .abox { align-self: flex-end; }
+  /* The stamp sits under the media block when the message carries no text: overlaying
+     it covered the file name. Specificity has to beat `.msg .stamp`. */
+  .msg .abox > .stamp, .msg.mine .abox > .stamp { position: static; align-self: flex-end;
+    margin-top: 3px; background: transparent; color: var(--dim); padding: 0;
+    font-weight: 500; }
+  .btext + .abox { margin-top: 8px; }
+  .aimg { max-width: min(280px, 100%); max-height: 240px; border-radius: 10px;
+    cursor: zoom-in; display: block; object-fit: cover; }
+  .afile { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    border-radius: 10px; font-size: 12.5px; max-width: 100%; box-sizing: border-box;
+    text-decoration: none; color: var(--text); line-height: 1.2;
+    background: var(--surface); border: 1px solid var(--line); }
+  .afile:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .afile .aicon { flex: none; font-size: 14px; opacity: .8; }
+  .afile .aname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Only inside a bubble does the card sit on blue and need a light treatment. */
+  .msg.mine .bubble .afile { background: rgba(255,255,255,.16);
+    border-color: rgba(255,255,255,.28); color: #fff; }
+  .msg.mine .bubble .afile:hover { background: rgba(255,255,255,.24); }
 
   .md-rule { display: block; height: 1px; background: var(--line-strong);
     margin: 10px 0; opacity: .8; }
@@ -470,7 +509,7 @@
     display: flex; align-items: center; gap: 3px;
     font-size: 12px; line-height: 1; white-space: nowrap; color: var(--faint);
     pointer-events: none; }
-  .msg.mine .stamp { color: rgba(255,255,255,.75); }
+  .msg.mine .bubble .stamp { color: rgba(255,255,255,.75); }
   /* A send still on its way: tweb shows a clock in the time slot. */
   .msg.pending .stamp::before {
     content: ''; display: inline-block; width: 8px; height: 8px;
@@ -578,6 +617,38 @@
   .bigbtn:hover { background: var(--surface-2); border-color: var(--faint); }
   .bigbtn.primary { background: var(--accent); border-color: transparent; color: #fff; }
   .bigbtn.primary:hover { filter: brightness(1.06); }
+  .bigbtn.danger { border-color: color-mix(in srgb, var(--err) 45%, var(--line-strong));
+    color: var(--err); }
+  .bigbtn.danger:hover { background: color-mix(in srgb, var(--err) 12%, var(--surface));
+    border-color: var(--err); }
+  .entry.danger .m { color: var(--dim); font-size: 12px; line-height: 1.5; }
+  .entry.memlist { display: grid; gap: 2px; }
+  .memrow { display: flex; align-items: center; gap: 8px; padding: 5px 4px;
+    border-radius: 7px; font-size: 12.5px; }
+  .memrow:hover { background: var(--surface-2); }
+  .memrow .mn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .memrow .memx { border: 0; background: transparent; color: var(--faint); cursor: pointer;
+    font-size: 11px; padding: 2px 6px; border-radius: 6px; }
+  .memrow .memx:hover { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); }
+
+  /* Small menu hanging off the + button. */
+  .createmenu { position: fixed; z-index: 80; background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 10px; padding: 4px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); display: grid; gap: 2px; min-width: 132px; }
+  .createmenu button { border: 0; background: transparent; text-align: start;
+    font: inherit; font-size: 12.5px; color: var(--text); padding: 7px 10px;
+    border-radius: 7px; cursor: pointer; }
+  .createmenu button:hover { background: var(--surface-2); }
+
+  /* @ mention picker floats above the composer. */
+  .mentionpop { position: fixed; z-index: 80; background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: 10px; padding: 4px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.18); display: grid; gap: 2px;
+    min-width: 200px; max-height: 240px; overflow-y: auto; }
+  .mentionpop .mitem { display: flex; align-items: center; gap: 8px; border: 0;
+    background: transparent; text-align: start; font: inherit; font-size: 12.5px;
+    color: var(--text); padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+  .mentionpop .mitem.on, .mentionpop .mitem:hover { background: var(--surface-2); }
   .entry.role .m { color: var(--dim); font-size: 12px; }
 
   /* Modal form (replaces window.prompt, which Electron does not implement). */
@@ -808,8 +879,11 @@
   /* a soft shimmer while the model is still thinking */
   .reasoning[data-state="running"] .rlabel { color: var(--accent); }
   /* A turn-scoped notice sits inside the process block, not in the message stream. */
-  .tpnote { font-size: 12px; color: var(--faint); font-style: italic; padding: 2px 0 2px 12px;
-    border-left: 2px solid var(--line-strong); margin: 6px 0 0; }
+  .tpnote { font-size: 12.5px; color: var(--dim); font-style: normal;
+    padding: 3px 0 3px 10px; border-left: 2px solid var(--line-strong);
+    margin: 6px 0 0; }
+  /* Interrupts and warnings are worth noticing. */
+  .tpnote[data-level="warn"] { color: var(--warn); border-left-color: var(--warn); }
 
   .reasoning[data-state="running"] .rlabel::after { content: ' · 进行中'; font-weight: 400;
     color: var(--faint); }
@@ -1084,8 +1158,8 @@
     color: var(--faint); display: flex; gap: 12px; }
 
   @media (max-width: 900px) {
-    #app { grid-template-columns: 1fr; }
-    .rail, .pane { display: none; }
+    /* The panels are handled by the overlay rules at 820px; here we only stop bubbles
+       from overflowing. Hiding the panels at this width left them unreachable. */
     .msg, .card, .reasoning { max-width: 100%; }
   }
 </style>
@@ -1095,7 +1169,7 @@
   <aside class="rail">
     <div class="rail-head">
       <span class="brand">MyGrokbot</span>
-      <button class="icon-btn" id="newAgent" title="新建 bot">+</button>
+      <button class="icon-btn" id="newAgent" title="新建 bot 或群聊">+</button>
     </div>
     <div class="search">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -1194,6 +1268,7 @@ let hostStatus = {};
 let routines = [];
 let reviewRules = {};
 let hostSettings = {};
+const hiddenTurns = new Set(); // turns whose rows belong to another surface
 let pendingIds = new Set();
 // DSH folds a finished turn's process only once the reader moves on: the newest turn
 // stays open, and sending anything collapses it. Keyed by turnId.
@@ -1259,7 +1334,7 @@ function avatarHTML(agent, size, extraClass = '', outline = false) {
     ? `<text x="50" y="50" text-anchor="middle" dominant-baseline="central"
          font-size="${glyph.length > 1 ? 34 : 44}" font-weight="700" fill="#fff"
          font-family="-apple-system, system-ui, sans-serif">${esc(glyph)}</text>`
-    : (size && size < 22
+    : (size && size < 14
         ? ''
         : '<rect x="33" y="41" width="10" height="21" rx="5" fill="#fff" opacity=".95"/>'
           + '<rect x="57" y="41" width="10" height="21" rx="5" fill="#fff" opacity=".95"/>');
@@ -1342,7 +1417,11 @@ function senderKey(entry) {
   if (entry.kind === 'message' && entry.role === 'assistant' && entry.fromAgent) {
     return `bot:${entry.fromAgent.id}`;
   }
-  if (entry.kind === 'send-message' && entry.message?.type === 'text') return 'bot';
+  // Key by the actual sender: a group has several bots replying, and the literal 'bot'
+  // merged every one of them into a single bubble.
+  if (entry.kind === 'send-message' && entry.message?.type === 'text') {
+    return entry.fromAgent?.id ? `bot:${entry.fromAgent.id}` : 'bot';
+  }
   return null;
 }
 function annotateGroups(list) {
@@ -1365,17 +1444,45 @@ function annotateGroups(list) {
 // A group's avatar is a 2x2 cluster of its members' colours, which is how the real
 // panel distinguishes a room from a single bot at a glance.
 function groupAvatar(memberIds, size = 40) {
-  const ids = (memberIds ?? []).slice(0, 4);
-  if (!ids.length) {
+  const all = memberIds ?? [];
+  // Above four members the cluster stops being readable, so it collapses into the same
+  // 2x2 shape every time: three faces plus a count badge.
+  const overflow = all.length > 4;
+  const ids = overflow ? all.slice(0, 3) : all.slice(0, 4);
+  // Overlap = 2*ratio-1 for two cells side by side. These keep every layout at ~45%
+  // so a group reads as one cluster regardless of member count.
+  // 4-up packs four cells into one box, so it needs a slightly smaller cell than the
+  // two-up case or the corners swallow each other.
+  const ratio = overflow
+    ? 0.58
+    : { 0: 0.96, 1: 0.96, 2: 0.70, 3: 0.64, 4: 0.60 }[ids.length];
+  const cellSize = Math.round(size * ratio);
+  const box = `width:${cellSize}px;height:${cellSize}px`;
+
+  if (!all.length) {
     return `<span class="avatar group n1" style="width:${size}px;height:${size}px">`
-      + `<span class="gcell" style="background:${colorFor('group')}">☰</span></span>`;
+      + `<span class="gcell" style="${box}">${avatarHTML({ id: 'group', name: '#' }, cellSize)}</span></span>`;
   }
-  const inner = ids.map((id) => {
+
+  const cells = ids.map((id) => {
     const a = agents.find((x) => x.id === id);
-    const cellSize = Math.round(size * 0.62);
-    return `<span class="gcell">${a ? avatarHTML(a, cellSize, '', true) : ''}</span>`;
-  }).join('');
-  return `<span class="avatar group n${ids.length}" style="width:${size}px;height:${size}px">${inner}</span>`;
+    // A member whose agent was deleted still gets a placeholder, never a blank cell.
+    return `<span class="gcell" style="${box}">`
+      + avatarHTML(a ?? { id, name: '?' }, cellSize, '', true) + '</span>';
+  });
+
+  if (overflow) {
+    const more = all.length - 3;
+    cells.push('');
+    return `<span class="avatar group n4 has-more" style="width:${size}px;height:${size}px">`
+      + cells.map((c, i) => (i === 3
+        ? `<span class="gcell gmore" style="${box}">+${more}</span>`
+        : c)).join('')
+      + '</span>';
+  }
+
+  return `<span class="avatar group n${ids.length}" style="width:${size}px;height:${size}px">`
+    + cells.join('') + '</span>';
 }
 
 function renderRoster() {
@@ -1465,7 +1572,8 @@ function renderRoster() {
         <span class="sub"></span>
       </span>`;
     el.querySelector('.name').textContent = a.name;
-    el.querySelector('.sub').textContent = a.description || a.id.slice(0, 8);
+    el.querySelector('.sub').textContent = (a.lastText || a.description || a.id.slice(0, 8))
+      .replace(/\s+/g, ' ');
     el.querySelector('.time').textContent = a.proxied ? 'remote' : fmtRelative(a.lastActivityMs);
     el.onclick = () => selectAgent(a.id);
     box.appendChild(el);
@@ -1646,6 +1754,24 @@ async function jumpToEntry(agentId, entryId) {
   $('status').textContent = '这条消息不在当前视图（可能已被截断）';
 }
 
+// Deleting a bot is irreversible and takes its transcript and memory with it, so it
+// needs an explicit confirmation naming the bot.
+async function deleteBot(agent) {
+  if (!agent) return;
+  const label = agent.isGroup ? `群聊「${agent.name}」` : `bot「${agent.name}」`;
+  if (!confirm(`确定删除${label}？\n\n对话记录、记忆和本地数据都会一起删除，此操作不可撤销。`)) return;
+  try {
+    await rpc('deleteAgents', { agentIds: [agent.id] });
+    if (hostSettings?.mainAgentId === agent.id) {
+      hostSettings = await rpc('setHostSettings', { patch: { mainAgentId: null } }).catch(() => hostSettings);
+    }
+    agents = await rpc('listAgents').catch(() => agents.filter((a) => a.id !== agent.id));
+    const next = agents[0]?.id ?? null;
+    if (next) await selectAgent(next); else { renderRoster(); renderPane(); }
+    $('status').textContent = `${label}已删除`;
+  } catch (err) { $('status').textContent = `删除失败：${err.message}`; }
+}
+
 // Promote or demote the chief-of-staff role. The title follows the role: the holder
 // gets 幕僚长, the previous holder loses it.
 async function setChiefOfStaff(agent, { isMain, holder, mainId }) {
@@ -1709,8 +1835,18 @@ function nodeFor(entry) {
     return el;
   }
   if (t === 'notice') {
+    // Interrupts borrow the approval-card shape: a small header line and the detail,
+    // in the same column and with the same border as every other system action.
+    if (entry.level === 'warn') {
+      const card = document.createElement('div');
+      card.className = 'card noticecard';
+      card.innerHTML = `<div class="ct"><span class="nico">⏹</span><span>本轮已中断</span></div>
+        <div class="cb"></div>`;
+      card.querySelector('.cb').textContent = entry.text ?? '';
+      return card;
+    }
     const el = document.createElement('div');
-    el.className = entry.turnId ? 'tpnote' : 'service';
+    el.className = 'service';
     el.textContent = entry.text ?? '';
     return el;
   }
@@ -1929,6 +2065,21 @@ function buildUnits(rows) {
     lastUnit = u;
   }
 
+  // Providers may report reasoning only at the end of a turn, which would place the
+  // process block *below* the answer it produced. A turn's thinking always belongs
+  // above its answer, so move the block there.
+  for (const u of out) {
+    if (u.type !== 'process' || u.turnId === 'no-turn') continue;
+    const unitIdx = out.indexOf(u);
+    const answerIdx = out.findIndex((x, i) => i < unitIdx && x.type === 'entry'
+      && x.entry?.turnId === u.turnId && x.entry?.kind === 'send-message'
+      && x.entry?.message?.type === 'text');
+    if (answerIdx >= 0) {
+      out.splice(unitIdx, 1);
+      out.splice(answerIdx, 0, u);
+    }
+  }
+
   // A turn's duration runs from its user message to its final answer.
   for (const u of out) {
     if (u.type !== 'process') continue;
@@ -1962,20 +2113,23 @@ function renderStream() {
       sample: entries.filter(e => e.kind === 'reasoning').slice(0,2).map(e => ({ id: e.id, len: (e.text||'').length, turn: e.turnId })) };
   }
   const log = $('log');
+  // Entries flagged hidden belong to another surface (a group, for instance); they exist
+  // in the transcript so the model can read them, but they never render here.
+  const visible = entries.filter((e) => !e.hidden);
   // The newest turn is the one whose process block appears last.
-  const procUnits = buildUnits(entries).filter((u) => u.type === 'process' && u.turnId !== 'no-turn');
+  const procUnits = buildUnits(visible).filter((u) => u.type === 'process' && u.turnId !== 'no-turn');
   latestTurnId = procUnits.length ? procUnits[procUnits.length - 1].turnId : null;
   // Keep the operator where they were: a full rebuild on every event would otherwise
   // jump the stream to the bottom (or to the top when empty) mid-conversation.
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   const prevTop = log.scrollTop;
   log.innerHTML = '';
-  if (!entries.length) {
+  if (!visible.length) {
     log.innerHTML = '<div class="empty" style="margin:auto;text-align:center">还没有对话。发一条消息试试。</div>';
     return;
   }
   let lastDay = null;
-  const units = buildUnits(entries);
+  const units = buildUnits(visible);
   // A process unit is rendered by its own path; the grouping pass only handles messages.
   const messageRows = units.filter((u) => u.type === 'entry').map((u) => u.entry);
   const grouped = new Map(annotateGroups(messageRows).map((g) => [g.entry.id, g]));
@@ -2010,8 +2164,15 @@ function renderStream() {
       el.className = `msg ${mine ? 'mine' : ''} group-${pos}`
         + `${isPending ? ' pending' : ''}${proactive ? ' proactive' : ''}`;
       el.dataset.entryId = entry.id;
-      el.innerHTML = `${mine ? '' : `<span class="avatar" style="background:${colorFor(entry.fromAgent?.id ?? activeId)}"></span>`}
+      // The bubble avatar must be the same object the roster renders — same shape,
+      // colour and glyph — otherwise editing an avatar silently desyncs the chat.
+      const speakerId = entry.fromAgent?.id ?? activeId;
+      const speaker = agents.find((a) => a.id === speakerId) ?? agents.find((a) => a.id === activeId);
+      const inGroup = agents.find((a) => a.id === activeId)?.isGroup === true;
+      const named = inGroup && !mine && entry.fromAgent?.name;
+      el.innerHTML = `${mine ? '' : avatarHTML(speaker ?? { id: speakerId, name: '?' }, 30)}
         <span class="stack">
+          ${named && (pos === 'start' || pos === 'single') ? `<span class="sname">${esc(entry.fromAgent.name)}</span>` : ''}
           ${proactive ? '<span class="pmark">主动通知</span>' : ''}
           <span class="bubble${pos === 'end' || pos === 'single' ? ' has-time' : ''}"><span class="btext"></span>${
             pos === 'end' || pos === 'single'
@@ -2019,14 +2180,16 @@ function renderStream() {
               : ''
           }</span>
         </span>`;
-      if (!mine) el.querySelector('.avatar').textContent = initialOf(name);
       // Reserve exactly the stamp's width (measured after layout) so the last text line
       // never slides under "04:13 · 3076 tok · 4 tok/s".
       const stampEl = el.querySelector('.stamp');
       if (stampEl) {
         const apply = () => {
+          // An attachment-only message has no bubble; the stamp lives on the media block.
+          const bubble = el.querySelector('.bubble');
+          if (!bubble) return;
           const w = stampEl.getBoundingClientRect().width;
-          if (w > 0) el.querySelector('.bubble').style.setProperty('--slot-w', `${Math.ceil(w) + 16}px`);
+          if (w > 0) bubble.style.setProperty('--slot-w', `${Math.ceil(w) + 16}px`);
         };
         // After this node is in the document and laid out.
         setTimeout(apply, 0);
@@ -2057,7 +2220,7 @@ function renderStream() {
       }
       const files = Array.isArray(entry.attachments) ? entry.attachments : [];
       if (files.length) {
-        const wrap = document.createElement('span');
+        const wrap = document.createElement('div');
         wrap.className = 'abox';
         for (const f of files) {
           const name = String(f).split('/').pop();
@@ -2073,14 +2236,31 @@ function renderStream() {
             img.onclick = () => window.open(img.src, '_blank');
             wrap.appendChild(img);
           } else {
-            const c = document.createElement('span');
+            const c = document.createElement('a');
             c.className = 'afile';
-            c.textContent = name;
+            c.href = `/files/${encodeURIComponent(String(f).replace(/^workspace\//, ''))}`;
+            c.target = '_blank';
+            c.rel = 'noreferrer';
             c.title = f;
+            c.innerHTML = '<span class="aicon">📄</span><span class="aname"></span>';
+            c.querySelector('.aname').textContent = name;
             wrap.appendChild(c);
           }
         }
-        el.querySelector('.bubble').insertBefore(wrap, el.querySelector('.stamp'));
+        // Media sits above the bubble, its own rounded block — the way a chat app shows
+        // an album. An attachment-only message drops the bubble entirely.
+        const bubble = el.querySelector('.bubble');
+        const btext = el.querySelector('.btext');
+        const hasText = Boolean(btext && btext.textContent.trim());
+        if (!hasText) {
+          btext?.remove();
+          // Keep the timestamp by moving it onto the media block.
+          const stamp = el.querySelector('.stamp');
+          if (stamp) wrap.appendChild(stamp);
+          bubble?.remove();
+        }
+        const stack = el.querySelector('.stack') ?? el;
+        stack.insertBefore(wrap, el.querySelector('.bubble') ?? null);
       }
       log.appendChild(el);
       continue;
@@ -2231,6 +2411,8 @@ function renderTurnProcess(unit) {
   // Only the newest turn can still be running. A turn that was interrupted, or whose
   // answer never landed, used to look "进行中" forever because no answer row existed.
   const isLatestTurn = unit.turnId === latestTurnId;
+  const terminated = entries.some((e) => e.turnId === unit.turnId
+    && (e.kind === 'error' || (e.kind === 'notice' && e.level === 'warn')));
 
   // ONE process disclosure per turn. Reasoning, tool calls and peer notices are all
   // children of it, in the order they happened — a tool call is a step *inside* the
@@ -2240,7 +2422,7 @@ function renderTurnProcess(unit) {
 
   const reasoningRows = steps.filter((r) => r.kind === 'reasoning');
   const previewText = reasoningRows.map((r) => cleanText(r.text ?? '')).filter(Boolean).join('\n\n');
-  const running = isLatestTurn && !answered;
+  const running = isLatestTurn && !answered && !terminated;
 
   const el = document.createElement('div');
   el.className = 'reasoning';
@@ -2258,7 +2440,7 @@ function renderTurnProcess(unit) {
   if (thoughtMs >= 1000) bits.push(`用时 ${fmtDuration(thoughtMs)}`);
   if (toolCount) bits.push(`${toolCount} 步`);
   el.querySelector('.rpeek').textContent = bits.length ? bits.join(' · ')
-    : (running ? '进行中' : '已完成');
+    : (running ? '' : '已完成');
   if (running) el.classList.add('open');
 
   const stream = el.querySelector('.rstream');
@@ -2364,10 +2546,10 @@ function renderPane() {
   };
 
   if (activeTab === 'overview') {
-    add(`<div class="sec">Bot</div>
+    add(`<div class="sec">${agent?.isGroup ? '群聊' : 'Bot'}</div>
       <div class="kv">
         <span class="k">名称</span><span data-f="name"></span>
-        <span class="k">模型</span><span data-f="model"></span>
+        ${agent?.isGroup ? '' : '<span class="k">模型</span><span data-f="model"></span>'}
         <span class="k">接入点</span><span data-f="route"></span>
         <span class="k">执行位置</span><span data-f="harness"></span>
         <span class="k">编号</span><span data-f="id" style="word-break:break-all"></span>
@@ -2399,12 +2581,66 @@ function renderPane() {
     });
     add(`<div class="avsec">
       <span class="avwrap">
-        <span class="avslot" data-av>${avatarHTML(agent, 64, 'xl')}</span>
-        <button class="avedit-btn" data-avedit title="修改图标">✎</button>
+        <span class="avslot" data-av>${agent.isGroup ? groupAvatar(agent.memberIds, 64) : avatarHTML(agent, 64, 'xl')}</span>
+        ${agent.isGroup ? '' : '<button class="avedit-btn" data-avedit title="修改图标">✎</button>'}
       </span>
     </div>`);
-    body.querySelector('[data-av]').ondblclick = () => openAvatarEditor(agent);
-    body.querySelector('[data-avedit]').onclick = (e) => { e.stopPropagation(); openAvatarEditor(agent); };
+    if (!agent.isGroup) {
+      body.querySelector('[data-av]').ondblclick = () => openAvatarEditor(agent);
+      body.querySelector('[data-avedit]').onclick = (e) => { e.stopPropagation(); openAvatarEditor(agent); };
+    }
+
+    if (agent?.isGroup) {
+      const memberIds = agent.memberIds ?? [];
+      add(`<div class="sec">群聊信息</div>
+        <div class="entry"><div class="m">${memberIds.length} 个成员 · 消息会转发给全部成员</div></div>`);
+      add(`<div class="sec"><span>成员 · ${memberIds.length}</span>
+        <button class="mini" data-addmem>+ 加入 bot</button></div>`);
+      add(`<div class="entry memlist" data-memlist></div>`);
+      const list = body.querySelector('[data-memlist]');
+      for (const mid of memberIds) {
+        const m = agents.find((a) => a.id === mid);
+        const row = document.createElement('div');
+        row.className = 'memrow';
+        row.innerHTML = `${m ? avatarHTML(m, 26) : ''}<span class="mn"></span>
+          <button class="memx" title="移出群聊">✕</button>`;
+        row.querySelector('.mn').textContent = m?.name ?? mid.slice(0, 8);
+        row.querySelector('.memx').onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm(`把「${m?.name ?? mid}」移出这个群聊？`)) return;
+          try {
+            const next = memberIds.filter((x) => x !== mid);
+            await rpc('setGroupMembers', { agentId: activeId, memberAgentIds: next });
+            agent.memberIds = next;
+            renderRoster(); renderPane();
+            $('status').textContent = '已移出群聊';
+          } catch (err) { $('status').textContent = err.message; }
+        };
+        list.appendChild(row);
+      }
+      body.querySelector('[data-addmem]').onclick = async () => {
+        const candidates = agents.filter((a) => !a.isGroup && !memberIds.includes(a.id));
+        if (!candidates.length) { $('status').textContent = '没有可加入的 bot'; return; }
+        const pick = await askForm({
+          title: '加入 bot',
+          fields: [{
+            name: 'who', label: `选择要加入的 bot`,
+            value: '', placeholder: candidates.map((c) => c.name).join('、'),
+          }],
+          submitLabel: '加入',
+        });
+        if (!pick) return;
+        const target = candidates.find((c) => c.name === pick.who.trim());
+        if (!target) { $('status').textContent = '没有找到这个名字'; return; }
+        try {
+          const next = [...memberIds, target.id];
+          await rpc('setGroupMembers', { agentId: activeId, memberAgentIds: next });
+          agent.memberIds = next;
+          renderRoster(); renderPane();
+          $('status').textContent = `${target.name} 已加入`;
+        } catch (err) { $('status').textContent = err.message; }
+      };
+    }
 
     add(`<div class="sec">职责<span class="hintx">双击编辑</span></div>
       <div class="entry desc"><div class="m" data-desc></div></div>`);
@@ -2454,6 +2690,14 @@ function renderPane() {
     roleBtn.textContent = isMain ? '取消幕僚长' : (holder ? '替换为幕僚长' : '设为幕僚长');
     roleBtn.className = `bigbtn${isMain ? '' : ' primary'}`;
     roleBtn.onclick = () => setChiefOfStaff(agent, { isMain, holder, mainId });
+
+    // Destructive action last, visually separated from the role control above it.
+    add(`<div class="sec">危险操作</div>
+      <div class="entry danger">
+        <div class="m">删除这个 bot：对话记录、记忆和本地数据都会一并移除，无法撤销。</div>
+        <button class="bigbtn danger" data-delbot>删除 bot</button>
+      </div>`);
+    body.querySelector('[data-delbot]').onclick = () => deleteBot(agent);
   }
 
   if (activeTab === 'routines') {
@@ -2595,16 +2839,21 @@ function renderPane() {
 
 /* ---------- actions ---------- */
 async function selectAgent(id) {
+  if (activeId && activeId !== id) drafts.set(activeId, $('input').value);
+  const switched = activeId !== id;
   activeId = id;
   renderRoster();
+  restoreComposer();
   const a = agents.find((x) => x.id === id);
   $('title').textContent = a?.name ?? '—';
   $('subtitle').textContent = a?.description || '';
   const av = $('headAvatar');
-  av.innerHTML = a ? avatarHTML(a, 28) : '';
+  // A group shows its member cluster everywhere it appears, not a single shape.
+  av.innerHTML = a ? (a.isGroup ? groupAvatar(a.memberIds, 28) : avatarHTML(a, 28)) : '';
 
-  binding = await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
-  $('model').textContent = binding.modelId ?? '—';
+  binding = a?.isGroup ? {} : await rpc('getAgentBinding', { agentId: id }).catch(() => ({}));
+  $('model').textContent = a?.isGroup ? '群聊' : (binding.modelId ?? '—');
+  $('model').style.display = a?.isGroup ? 'none' : '';
   modelCatalog = null; // the base URL may differ per agent
   const route = await rpc('getAgentRoute', { agentId: id }).catch(() => null);
   $('subtitle').textContent = `${a?.description || ''}${route?.proxied ? ' · runs on the server' : ''}`;
@@ -2741,19 +2990,114 @@ async function answerWidget(entryId, value) {
   }
 }
 
+// ---- @mentions -------------------------------------------------------------
+// Typing "@" opens a picker: group members in a room, every other bot in a 1:1 chat.
+// In a group the mentions decide who answers; the rest still receive the message.
+let mentionState = null; // { start, items, index }
+
+function mentionCandidates() {
+  const current = agents.find((a) => a.id === activeId);
+  if (current?.isGroup) {
+    return (current.memberIds ?? [])
+      .map((id) => agents.find((a) => a.id === id))
+      .filter(Boolean);
+  }
+  return agents.filter((a) => !a.isGroup && a.id !== activeId);
+}
+
+function closeMention() {
+  mentionState = null;
+  document.getElementById('mentionPop')?.remove();
+}
+
+function renderMentionPop() {
+  document.getElementById('mentionPop')?.remove();
+  if (!mentionState || !mentionState.items.length) return;
+  const pop = document.createElement('div');
+  pop.id = 'mentionPop';
+  pop.className = 'mentionpop';
+  pop.innerHTML = mentionState.items.map((a, i) =>
+    `<button class="mitem${i === mentionState.index ? ' on' : ''}" data-i="${i}">
+       ${avatarHTML(a, 20)}<span class="mname"></span>
+     </button>`).join('');
+  pop.querySelectorAll('.mname').forEach((n, i) => { n.textContent = mentionState.items[i].name; });
+  pop.querySelectorAll('.mitem').forEach((b) => {
+    b.onmousedown = (e) => { e.preventDefault(); pickMention(Number(b.dataset.i)); };
+  });
+  const input = $('input');
+  const r = input.getBoundingClientRect();
+  pop.style.left = `${Math.round(r.left)}px`;
+  pop.style.bottom = `${Math.round(window.innerHeight - r.top + 6)}px`;
+  document.body.appendChild(pop);
+}
+
+function pickMention(i) {
+  const input = $('input');
+  const item = mentionState?.items[i];
+  if (!item) return closeMention();
+  const text = input.value;
+  const start = mentionState.start;
+  const head = text.slice(0, start);
+  const tail = text.slice(input.selectionStart ?? text.length);
+  const inserted = `@${item.name} `;
+  input.value = `${head}${inserted}${tail}`;
+  const caret = head.length + inserted.length;
+  input.setSelectionRange(caret, caret);
+  input.focus();
+  closeMention();
+  drafts.set(activeId, input.value);
+}
+
+function updateMentionState() {
+  const input = $('input');
+  const caret = input.selectionStart ?? input.value.length;
+  const upto = input.value.slice(0, caret);
+  const m = /(^|\s)@([^\s@]*)$/.exec(upto);
+  if (!m) return closeMention();
+  const query = m[2].toLowerCase();
+  const items = mentionCandidates().filter((a) => a.name.toLowerCase().includes(query)).slice(0, 6);
+  if (!items.length) return closeMention();
+  const start = caret - query.length - 1;
+  const keep = mentionState && mentionState.start === start ? mentionState.index : 0;
+  mentionState = { start, items, index: Math.min(keep, items.length - 1) };
+  renderMentionPop();
+}
+
+// Ids of the bots named with @ in the current text. Matching is longest-first and
+// global: several mentions are supported, "Nas Bot" does not also match inside
+// "Nas Bot X", and repeats collapse to one id.
+function mentionedAgentIds(text) {
+  const list = mentionCandidates();
+  if (!list.length) return [];
+  const names = [...list].sort((a, b) => b.name.length - a.name.length);
+  const pattern = names
+    .map((a) => a.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('|');
+  const re = new RegExp(`@(${pattern})`, 'g');
+  const found = new Set();
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    const hit = names.find((a) => a.name === m[1]);
+    if (hit) found.add(hit.id);
+  }
+  return [...found];
+}
+
 async function send() {
   const input = $('input');
   const text = input.value.trim();
-  if (!text || !activeId) return;
+  // Empty text is fine when something is attached.
+  if ((!text && !pendingFiles.length) || !activeId) return;
   input.value = '';
   input.style.height = 'auto';
   $('status').textContent = '发送中…';
   try {
     // Attachments already live in workspace/uploads; their paths ride with the prompt.
     const paths = pendingFiles.map((f) => f.path);
+    const mentions = mentionedAgentIds(text);
     const acc = await rpc('sendPrompt', {
       agentId: activeId, prompt: text,
       ...(paths.length ? { attachmentPaths: paths } : {}),
+      ...(mentions.length ? { mentionAgentIds: mentions } : {}),
       ...(replyTarget ? { replyTo: replyTarget.id } : {}),
     });
     clearReply();
@@ -2882,6 +3226,51 @@ function runCommand(cmd) {
   }
 }
 
+// The + button offers both creation flows.
+function openCreateMenu(anchor) {
+  const menu = document.createElement('div');
+  menu.className = 'createmenu';
+  menu.innerHTML = `
+    <button data-new="bot">新建 bot</button>
+    <button data-new="group">新建群聊</button>`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.round(r.left)}px`;
+  menu.style.top = `${Math.round(r.bottom + 6)}px`;
+  const close = () => { menu.remove(); document.removeEventListener('click', onDoc, true); };
+  const onDoc = (e) => { if (!menu.contains(e.target) && e.target !== anchor) close(); };
+  setTimeout(() => document.addEventListener('click', onDoc, true), 0);
+  menu.querySelector('[data-new="bot"]').onclick = () => { close(); createAgent(); };
+  menu.querySelector('[data-new="group"]').onclick = () => { close(); createGroup(); };
+}
+
+async function createGroup() {
+  const candidates = agents.filter((a) => !a.isGroup);
+  const res = await askForm({
+    title: '新建群聊',
+    fields: [
+      { name: 'name', label: '群聊名称', placeholder: '例如 运维群' },
+      { name: 'description', label: '说明（可选）', placeholder: '这个群用来做什么' },
+      { name: 'members', label: '成员 bot（用逗号分隔）', placeholder: candidates.map((c) => c.name).join('、') },
+    ],
+    submitLabel: '创建',
+  });
+  if (!res || !res.name) return;
+  const names = String(res.members ?? '').split(/[,，、\s]+/).filter(Boolean);
+  const memberIds = candidates.filter((c) => names.includes(c.name)).map((c) => c.id);
+  try {
+    const g = await rpc('createGroup', {
+      name: res.name,
+      description: res.description ?? '',
+      memberAgentIds: memberIds,
+    });
+    agents = await rpc('listAgents');
+    renderRoster();
+    await selectAgent(g.id ?? g.agentId);
+    $('status').textContent = `群聊「${res.name}」已创建`;
+  } catch (err) { $('status').textContent = `创建失败：${err.message}`; }
+}
+
 async function createAgent() {
   const res = await askForm({
     title: '新建 bot',
@@ -2921,21 +3310,52 @@ const hostEvents = (() => {
   };
 })();
 
+// Ask the host whether a turn is actually running, and align the composer with it.
+async function syncRunState() {
+  try {
+    const st = await rpc('getHostStatus', {});
+    busyAgents.clear();
+    for (const id of st?.runningAgents ?? []) busyAgents.add(id);
+    // Older hosts only report a count; treat that as "the active bot is busy".
+    if (!st?.runningAgents && Number(st?.runningTurns ?? 0) > 0 && activeId) busyAgents.add(activeId);
+    restoreComposer();
+  } catch { /* keep the current state when the host is unreachable */ }
+}
+
 function connectEvents() {
   const es = new EventSource(`/events${TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : ''}`);
-  es.onopen = () => { $('conn').textContent = 'live'; $('conn').className = 'pill live'; };
+  es.onopen = () => {
+    $('conn').textContent = 'live';
+    $('conn').className = 'pill live';
+    syncRunState();
+  };
   es.onerror = () => { $('conn').textContent = 'reconnecting'; $('conn').className = 'pill down'; };
   es.onmessage = (msg) => {
     const ev = JSON.parse(msg.data);
     hostEvents.publish(ev);
+    // Lifecycle events must update the per-bot busy set even when that bot is not the
+    // one on screen — otherwise its 思考中 never clears.
+    if (ev.type === 'turn-start' && ev.hidden) hiddenTurns.add(ev.turnId);
+    if (ev.type === 'turn-end' || ev.type === 'turn-error' || ev.type === 'turn-interrupted') {
+      hiddenTurns.delete(ev.turnId);
+    }
+    if (ev.agentId && ev.type === 'turn-start') setBusy(true, ev.agentId);
+    if (ev.agentId && (ev.type === 'turn-end' || ev.type === 'turn-error' || ev.type === 'turn-interrupted')) {
+      setBusy(false, ev.agentId);
+    }
     if (ev.agentId && ev.agentId !== activeId) {
+      // Only real content moves the timestamp: bumping it on every event (including
+      // queue noise) made the whole roster read "now" forever.
       const a = agents.find((x) => x.id === ev.agentId);
-      if (a) a.lastActivityMs = Date.now();
-      renderRoster();
+      if (a && ev.type === 'transcript' && !ev.entry?.hidden) {
+        a.lastActivityMs = ev.entry?.timestampMs ?? a.lastActivityMs;
+        renderRoster();
+      }
       return;
     }
     switch (ev.type) {
       case 'transcript': {
+        if (ev.entry?.hidden) return;
         const cached = ev.entry.id;
         // The optimistic row already carries this id; appending again would show the
         // operator's own message twice.
@@ -3049,7 +3469,7 @@ function connectEvents() {
         break;
       case 'turn-start':
       case 'queue-dequeued':
-        setBusy(true);
+        setBusy(true, ev.agentId ?? activeId);
         // Only refresh the pending set; re-rendering here would rebuild the live
         // reasoning node and drop its open state.
         rpc('getPendingEntryIds', { agentId: activeId })
@@ -3059,17 +3479,22 @@ function connectEvents() {
       case 'turn-end':
         // Freeze the measured throughput onto the turn: the number stays visible in the
         // answer footer after generation stops.
-        if (genStats && ev.turnId) {
-          const secs = Math.max(0.2, (Date.now() - genStats.startedAt) / 1000);
+        if (genStatsFor(ev.agentId ?? activeId) && ev.turnId) {
+          const g = genStatsFor(ev.agentId ?? activeId);
+          const secs = Math.max(0.2, (Date.now() - g.startedAt) / 1000);
           turnUsage.set(ev.turnId, {
             ...(ev.usage ?? {}),
-            charsPerSec: genStats.chars > 0 ? Math.round(genStats.chars / secs) : null,
-            measuredMs: Math.round((Date.now() - genStats.startedAt)),
+            charsPerSec: g.chars > 0 ? Math.round(g.chars / secs) : null,
+            measuredMs: Math.round(Date.now() - g.startedAt),
           });
         }
-        setBusy(false);
+        setBusy(false, ev.agentId ?? activeId);
         // The answer is finished: fold this turn's reasoning first, so the transition
         // plays, then let the reload settle the final state.
+        if (ev.turnId && hiddenTurns.has(ev.turnId)) {
+          reloadTranscript();
+          break;
+        }
         if (ev.turnId) {
           const r = document.querySelector(`.reasoning[data-turn-id="${ev.turnId}"]`);
           if (r && r.dataset.state === 'running') {
@@ -3087,13 +3512,13 @@ function connectEvents() {
         reloadTranscript();
         break;
       case 'turn-error':
-        setBusy(false);
+        setBusy(false, ev.agentId ?? activeId);
         if (ev.turnId) settledTurns.add(ev.turnId);
         $('status').textContent = ev.error;
         reloadTranscript();
         break;
       case 'turn-interrupted':
-        setBusy(false);
+        setBusy(false, ev.agentId ?? activeId);
         if (ev.turnId) settledTurns.add(ev.turnId);
         $('status').textContent = '已停止';
         reloadTranscript();
@@ -3455,6 +3880,12 @@ function renderSettings() {
   const row = (label, desc, ctl) =>
     `<div class="s-row"><span class="s-label">${label}<span class="s-desc">${desc}</span></span>${ctl}</div>`;
 
+  const GROUP_NOTICE = `<div class="s-row"><div class="s-main2">`
+    + `<div class="s-k">群聊不绑定模型</div>`
+    + `<div class="s-d">群聊只负责把消息转发给成员 bot，模型和密钥由各成员自己决定。</div>`
+    + `</div></div>`;
+  const isGroupAgent = agents.find((a) => a.id === activeId)?.isGroup === true;
+
   const sections = {
     provider: () => row('接入地址', 'OpenAI 兼容的 base URL，末尾不带 /chat/completions',
         `<input type="text" id="setBaseUrl" value="${esc(provider?.baseUrl ?? '')}" placeholder="https://api.example.com/v1" />`)
@@ -3510,7 +3941,7 @@ function renderSettings() {
   body.innerHTML = SETTINGS_SECTIONS
     .map((sec) => `<section class="s-group" id="sec-${sec.id}">`
       + `<div class="s-sec">${sec.label}</div>`
-      + (sections[sec.id]?.() ?? '')
+      + (sec.id === 'provider' && isGroupAgent ? GROUP_NOTICE : (sections[sec.id]?.() ?? ''))
       + '</section>')
     .join('');
 
@@ -3764,24 +4195,47 @@ async function stopTurn() {
   }
 }
 $('stop').onclick = stopTurn;
-setInterval(() => { if (genStats) updateHint(); }, 500);
+setInterval(() => { if (genStatsFor()) updateHint(); }, 500);
 
-let genStats = null; // { startedAt, chars, tokens, thinking }
+const genStatsByAgent = new Map(); // agentId -> { startedAt, chars, tokens, thinking }
+// The active bot's stats; every read goes through here so switching bots switches stats.
+function genStatsFor(id = activeId) { return genStatsByAgent.get(id) ?? null; }
 
-function setBusy(busy) {
+// Busy is per bot: the engine runs turns independently, so one agent thinking must not
+// put every other agent's composer into 思考中.
+const busyAgents = new Set();
+const drafts = new Map();   // agentId -> unsent composer text
+
+function setBusy(busy, agentId = activeId) {
+  if (!agentId) return;
+  if (busy) busyAgents.add(agentId); else busyAgents.delete(agentId);
+  if (agentId !== activeId) return;
   $('stop').classList.toggle('on', busy);
   if (!busy) {
-    genStats = null;
+    genStatsByAgent.delete(agentId);
+    if (agentId === activeId) updateHint();
     return;
   }
-  if (!genStats) genStats = { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true };
-  updateHint();
+  if (!genStatsFor(agentId)) {
+    genStatsByAgent.set(agentId, { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true });
+  }
+  if (agentId === activeId) updateHint();
+}
+
+// Reflect the active bot's own busy state and draft.
+function restoreComposer() {
+  const busy = busyAgents.has(activeId);
+  $('stop').classList.toggle('on', busy);
+  if (!busy) { updateHint(); }
+  $('input').value = drafts.get(activeId) ?? '';
+  $('input').dispatchEvent(new Event('input'));
 }
 
 function bumpGen(chars, tokens = 0) {
-  if (!genStats) genStats = { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true };
-  genStats.chars += chars;
-  genStats.tokens += tokens;
+  let g = genStatsFor();
+  if (!g) { g = { startedAt: Date.now(), chars: 0, tokens: 0, thinking: true }; genStatsByAgent.set(activeId, g); }
+  g.chars += chars;
+  g.tokens += tokens;
   updateHint();
 }
 
@@ -3792,16 +4246,40 @@ function bumpGen(chars, tokens = 0) {
 // The hint line was removed; the live rate now lives in the status line, which only
 // speaks while something is happening.
 function updateHint() {
-  if (!genStats) return;
-  const secs = Math.max(0.2, (Date.now() - genStats.startedAt) / 1000);
+  const g = genStatsFor();
+  if (!g) return;
+  const secs = Math.max(0.2, (Date.now() - g.startedAt) / 1000);
   // Characters per second is the only live signal; tokens only exist at turn end.
-  const cps = Math.round(genStats.chars / secs);
-  if (genStats.thinking) {
+  const cps = Math.round(g.chars / secs);
+  if (g.thinking) {
     $('status').textContent = `思考中… ${secs.toFixed(0)}s`;
     return;
   }
   $('status').textContent = `生成中… ${cps} 字/秒`;
 }
+$('input').addEventListener('input', () => {
+  if (activeId) drafts.set(activeId, $('input').value);
+});
+$('input').addEventListener('input', () => updateMentionState());
+$('input').addEventListener('click', () => updateMentionState());
+$('input').addEventListener('keydown', (e) => {
+  if (!mentionState) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const n = mentionState.items.length;
+    mentionState.index = (mentionState.index + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+    renderMentionPop();
+  } else if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+    e.preventDefault();
+    e.stopPropagation();
+    pickMention(mentionState.index);
+  } else if (e.key === 'Escape') {
+    e.stopPropagation();
+    closeMention();
+  }
+}, true);
+$('input').addEventListener('blur', () => setTimeout(closeMention, 120));
+
 $('input').addEventListener('input', (e) => {
   e.target.style.height = 'auto';
   e.target.style.height = `${Math.min(e.target.scrollHeight, 180)}px`;
@@ -3855,9 +4333,20 @@ $('search').addEventListener('input', (e) => {
   }, 260);
 });
 $('toggleInfo').onclick = () => togglePane();
-$('newAgent').onclick = createAgent;
+$('newAgent').onclick = (e) => { e.stopPropagation(); openCreateMenu(e.currentTarget); };
 $('toggleRail').onclick = toggleRail;
-if (window.matchMedia('(max-width: 820px)').matches) $('toggleRail').style.display = 'grid';
+
+// The overlay button used to be decided once at load, so shrinking the window left the
+// rail hidden and unreachable. Track the breakpoint instead, and drop the overlay state
+// when the window is wide enough to show both panels inline again.
+const narrowMq = window.matchMedia('(max-width: 820px)');
+function syncNarrowLayout() {
+  const narrow = narrowMq.matches;
+  $('toggleRail').style.display = narrow ? 'grid' : 'none';
+  if (!narrow) $('app').classList.remove('rail-open', 'pane-open');
+}
+syncNarrowLayout();
+narrowMq.addEventListener('change', syncNarrowLayout);
 $('openSettings').onclick = openSettings;
 $('openPlugins').onclick = () => { $('status').textContent = '插件：尚未接入'; };
 $('paletteInput').addEventListener('input', (e) => renderPalette(e.target.value));
